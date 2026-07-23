@@ -60,7 +60,7 @@ if [ ! -f .env ]; then
 cat > .env << 'ENVEOF'
 CAPTURE_TOKEN={capture_token}
 SERVER_URL={public_url}
-MIN_FREE_GB=10
+MIN_FREE_GB=3
 RETENTION_DAYS=14
 TELEGRAM_BOT_TOKEN={tg_token}
 TELEGRAM_CHAT_ID={tg_chat}
@@ -81,7 +81,7 @@ if ! grep -q 'dragonrecorder' /etc/caddy/Caddyfile 2>/dev/null; then
         file_server
     }}
     @dash path /dash /dash/* /api/dash/*
-    basicauth @dash {{
+    basic_auth @dash {{
         trenton $HASH
     }}
     reverse_proxy localhost:8082
