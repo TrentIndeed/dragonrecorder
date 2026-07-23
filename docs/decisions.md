@@ -50,6 +50,39 @@ directly; FastAPI only handles metadata, analytics, and the pending/expired
 states. Proxying video bytes through uvicorn would buy nothing and cost
 scrubbing latency.
 
+## Docker Compose, not systemd
+
+The build spec said "systemd units," but the box's actual convention (set by
+meshToParametric and operatorDashboard) is: `git clone` into `/opt/<repo>`,
+Docker Compose with `restart: unless-stopped`, a site block appended to
+`/etc/caddy/Caddyfile`, `systemctl reload caddy`. Matching the existing
+convention beat matching the spec's wording. One deviation from mesh: the
+data dir is a **bind mount**, not a named volume — Caddy on the host has to
+`file_server` the video files directly, and the SQLite-over-bind-mount
+deadlock mesh documents is a Docker Desktop/Windows problem that doesn't
+apply on the Linux box.
+
+## ffmpeg pinned per NVENC driver generation
+
+ffmpeg's NVENC support requires a minimum driver API: ffmpeg 8.x wants
+nvenc API 13.1 (driver 610+), which a current-but-not-bleeding driver
+doesn't have. The client therefore resolves ffmpeg in this order:
+`FFMPEG_PATH` env → a pinned build under `%LOCALAPPDATA%\dragonrecorder-ffmpeg`
+→ PATH → winget's Gyan build. On this machine that's a BtbN n7.1 build.
+If NVENC still fails at runtime, the recorder falls back to gdigrab+libx264
+per-segment — capture exclusion works for both paths (GDI honors
+`WDA_EXCLUDEFROMCAPTURE` too).
+
+## Dark on both surfaces
+
+Loom splits dark recorder / light web app. We deliberately go dark on both:
+the recorder disappears into the desktop, and the player inherits the same
+instrument-panel identity — neutral greys, monospace tabular timecode, and
+exactly two reserved accents: red appears only for the live/recording state
+(so it never appears anywhere in the hosted UI), violet marks
+machine-generated content (AI titles, transcripts, detected edits, the
+attention histogram).
+
 ## Rewind cut from v1
 
 Loom's rewind (back up a few seconds, re-record over the mistake) is real

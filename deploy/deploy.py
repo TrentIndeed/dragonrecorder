@@ -17,16 +17,31 @@ import subprocess
 import sys
 from pathlib import Path
 
+# docker build output contains unicode the Windows console codepage can't map
+sys.stdout.reconfigure(errors="replace")
+sys.stderr.reconfigure(errors="replace")
+
 REPO_URL = "https://github.com/TrentIndeed/dragonrecorder.git"
 REMOTE_DIR = "/opt/dragonrecorder"
 SSH_KEY = os.environ.get("SSH_KEY_PATH", str(Path.home() / ".ssh" / "id_ed25519"))
 
 
-def ssh(ip: str, script: str, timeout: int = 600) -> subprocess.CompletedProcess:
-    return subprocess.run(
+class SshResult:
+    def __init__(self, r: subprocess.CompletedProcess):
+        self.returncode = r.returncode
+        self.stdout = r.stdout.decode(errors="replace")
+        self.stderr = r.stderr.decode(errors="replace")
+
+
+def ssh(ip: str, script: str, timeout: int = 600) -> SshResult:
+    # bytes, not text mode: Windows text mode would rewrite \n as \r\n and
+    # remote bash chokes on the carriage returns
+    r = subprocess.run(
         ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=30",
          "-i", SSH_KEY, f"root@{ip}", "bash", "-s"],
-        input=script, text=True, capture_output=True, timeout=timeout)
+        input=script.replace("\r\n", "\n").encode(),
+        capture_output=True, timeout=timeout)
+    return SshResult(r)
 
 
 def main() -> int:
