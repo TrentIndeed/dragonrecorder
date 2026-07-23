@@ -26,6 +26,19 @@
     return r;
   };
 
+  // "Record a video": pokes the tray app's loopback bridge to open the
+  // launcher panel on this machine. Only works in the browser running on
+  // the recording PC — anywhere else the recorder isn't reachable.
+  $("recordBtn").addEventListener("click", async () => {
+    try {
+      const r = await fetch("http://127.0.0.1:8477/open", { method: "POST" });
+      if (r.ok) return toast("Recorder opened — check the top-right panel");
+      throw new Error();
+    } catch {
+      toast("Recorder isn't running on this machine — start it with run.bat");
+    }
+  });
+
   $("logout").addEventListener("click", async () => {
     await fetch("/api/dash/logout", { method: "POST" });
     location.reload();

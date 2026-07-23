@@ -36,7 +36,7 @@ class PanelApi:
     """JS bridge for the pre-record panel."""
 
     def __init__(self, app: "App"):
-        self.app = app
+        self._app = app
 
     def get_setup(self):
         settings = config.load_settings()
@@ -61,11 +61,11 @@ class PanelApi:
         config.save_settings(cur)
 
     def start_recording(self):
-        self.app.overlays.hide_panel()
-        self.app.session.toggle()
+        self._app.overlays.hide_panel()
+        self._app.session.toggle()
 
     def hide_panel(self):
-        self.app.overlays.hide_panel()
+        self._app.overlays.hide_panel()
 
     def open_dashboard(self):
         import webbrowser
@@ -76,34 +76,34 @@ class ToolbarApi:
     """JS bridge for the recording toolbar."""
 
     def __init__(self, app: "App"):
-        self.app = app
+        self._app = app
 
     def get_state(self):
-        return self.app.session.toolbar_state()
+        return self._app.session.toolbar_state()
 
     def stop(self):
-        self.app.session.stop()
+        self._app.session.stop()
 
     def pause_resume(self):
-        self.app.session.pause_resume()
+        self._app.session.pause_resume()
 
     def trash(self):
-        self.app.session.trash()
+        self._app.session.trash()
 
     def restart(self):
-        self.app.session.restart()
+        self._app.session.restart()
 
     def toggle_draw(self):
-        return self.app.overlays.toggle_draw(config.load_settings()["monitor"])
+        return self._app.overlays.toggle_draw(config.load_settings()["monitor"])
 
     def toggle_camera(self):
-        return self.app.overlays.toggle_bubble_visible()
+        return self._app.overlays.toggle_bubble_visible()
 
     def toggle_blur(self):
         s = config.load_settings()
         s["blur"] = not s["blur"]
         config.save_settings(s)
-        self.app.overlays.set_bubble_blur(s["blur"])
+        self._app.overlays.set_bubble_blur(s["blur"])
         return s["blur"]
 
 
@@ -210,6 +210,9 @@ class App:
         threading.Thread(target=self.run_tray, daemon=True).start()
         threading.Thread(target=self.render_job_loop, daemon=True).start()
         threading.Thread(target=self.cleanup_old_takes, daemon=True).start()
+        # web dashboard "Record a video" button → open the launcher panel
+        from . import bridge
+        bridge.start(self.overlays.show_panel)
 
     def main(self):
         self.overlays.create_panel(PanelApi(self))

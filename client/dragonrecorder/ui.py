@@ -42,11 +42,12 @@ class Overlays:
 
     def create_panel(self, js_api) -> "webview.Window":
         x, y = self._panel_pos()
+        # note: transparent=True must NOT be combined with background_color —
+        # pywebview/WebView2 wedges during create_window on that combination
         self.panel = webview.create_window(
             "DragonRecorder", _url("panel.html"), js_api=js_api,
             x=x, y=y, width=PANEL_W, height=PANEL_H, frameless=True,
-            resizable=False, on_top=True, transparent=True,
-            background_color="#17181c")
+            resizable=False, on_top=True, transparent=True)
         self._panel_visible = True
         # excluded from capture like the toolbar: if it's open when recording
         # starts (countdown overlap), it must not land in the video

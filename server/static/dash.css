@@ -59,8 +59,20 @@
 .sidesection label:hover { background: var(--surface); color: var(--text); }
 .sidesection input { accent-color: var(--ai); }
 
-.sidefoot { margin-top: auto; }
+.sidefoot { margin-top: auto; display: grid; gap: 8px; }
 .sidefoot button { width: 100%; }
+.recordbtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: var(--live);
+  border: none;
+  color: #fff;
+  font-weight: 600;
+  padding: 10px;
+}
+.recordbtn:hover { background: var(--live); filter: brightness(1.08); }
 
 .main { flex: 1; padding: 24px 32px 80px; min-width: 0; }
 .mhead {
