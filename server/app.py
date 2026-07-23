@@ -23,6 +23,11 @@ log = logging.getLogger("dragonrecorder")
 logging.basicConfig(level=logging.INFO)
 
 templates = Jinja2Templates(directory=config.BASE_DIR / "templates")
+# cache-buster for /static assets: new value per server start, so every
+# deploy invalidates browser caches (StaticFiles sends no Cache-Control and
+# browsers otherwise cache heuristically and keep stale CSS/JS)
+import time as _time
+templates.env.globals["v"] = int(_time.time())
 
 SLUG_ALPHABET = string.ascii_letters + string.digits
 CUT_KINDS = ("fillers", "silences")  # kinds whose toggle requires a derived render

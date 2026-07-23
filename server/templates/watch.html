@@ -8,8 +8,8 @@
 <meta property="og:description" content="{{ r.description or 'Watch this recording' }}">
 <meta property="og:type" content="video.other">
 {% if r.has_thumb %}<meta property="og:image" content="/media/{{ slug }}/thumb.jpg">{% endif %}
-<link rel="stylesheet" href="/static/shared.css">
-<link rel="stylesheet" href="/static/player.css">
+<link rel="stylesheet" href="/static/shared.css?v={{ v }}">
+<link rel="stylesheet" href="/static/player.css?v={{ v }}">
 </head>
 <body>
 <main class="watch">
@@ -141,6 +141,6 @@ window.DR = {
   isOwner: {{ "true" if is_owner else "false" }},
 };
 </script>
-<script src="/static/player.js"></script>
+<script src="/static/player.js?v={{ v }}"></script>
 </body>
 </html>
