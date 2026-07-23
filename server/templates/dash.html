@@ -3,52 +3,56 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>DragonRecorder</title>
+<title>Library — DragonRecorder</title>
 <link rel="stylesheet" href="/static/shared.css">
 <link rel="stylesheet" href="/static/dash.css">
 </head>
 <body>
-<main class="dash">
-  <header class="dhead">
-    <h1>DragonRecorder</h1>
-    <div class="autoapply" id="autoApply">
-      <span class="lbl">Auto-apply to new recordings:</span>
-      <label><input type="checkbox" data-kind="fillers"> Remove filler words</label>
-      <label><input type="checkbox" data-kind="silences"> Remove silences</label>
-      <label><input type="checkbox" data-kind="captions"> Captions</label>
+<div class="shell">
+  <aside class="side">
+    <div class="brand">
+      <svg viewBox="0 0 24 24" width="22" height="22"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2.4"/><circle cx="12" cy="12" r="3.6" fill="#ff4545"/></svg>
+      DragonRecorder
     </div>
-    <button id="logout" title="Sign out">Sign out</button>
-  </header>
 
-  <div id="list"></div>
-  <p class="empty" id="emptyMsg" hidden>Nothing recorded yet. Hit the record
-    hotkey on your machine and your first take will show up here.</p>
+    <nav>
+      <button class="navitem active">
+        <svg viewBox="0 0 24 24"><path d="M4 5h16a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zm6 3v8l6-4-6-4z"/></svg>
+        Library
+      </button>
+    </nav>
 
-  <dialog id="detail">
-    <div class="dhd">
-      <h2 id="dTitle"></h2>
-      <button id="dClose" aria-label="Close">✕</button>
+    <div class="sidesection">
+      <h3>Auto-apply to new recordings</h3>
+      <label><input type="checkbox" data-kind="fillers" class="aa"> Remove filler words</label>
+      <label><input type="checkbox" data-kind="silences" class="aa"> Remove silences</label>
+      <label><input type="checkbox" data-kind="captions" class="aa"> Captions</label>
     </div>
-    <div class="dbody">
-      <section>
-        <h3>Edits <span class="pill ai-badge">AI-detected</span></h3>
-        <div id="dEdits"></div>
-      </section>
-      <section>
-        <h3>Viewers</h3>
-        <canvas id="dropoff" width="600" height="80"></canvas>
-        <table id="dViewers">
-          <thead><tr><th>Who</th><th>First seen</th><th class="num">Watched</th><th class="num">Reached</th></tr></thead>
-          <tbody></tbody>
-        </table>
-      </section>
-      <section id="dTranscriptWrap" hidden>
-        <h3>Transcript <span class="pill ai-badge">AI</span></h3>
-        <div id="dTranscript"></div>
-      </section>
+
+    <div class="sidefoot">
+      <button id="logout">Sign out</button>
     </div>
-  </dialog>
-</main>
+  </aside>
+
+  <main class="main">
+    <header class="mhead">
+      <h1>Library</h1>
+      <span class="pill num" id="countPill"></span>
+    </header>
+
+    <div class="grid" id="grid"></div>
+
+    <div class="emptystate" id="emptyMsg" hidden>
+      <div class="bigring">
+        <svg viewBox="0 0 24 24" width="34" height="34"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="4" fill="#ff4545"/></svg>
+      </div>
+      <h2>Record your first video</h2>
+      <p>Hit the record hotkey on your machine, talk, hit it again —
+         the share link is on your clipboard before the upload finishes,
+         and the recording shows up here.</p>
+    </div>
+  </main>
+</div>
 <div class="toast" id="toast" role="status"></div>
 <script src="/static/dash.js"></script>
 </body>

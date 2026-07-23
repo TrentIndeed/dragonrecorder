@@ -467,6 +467,15 @@ async def dash_login(request: Request):
     raise HTTPException(401, "wrong username or password")
 
 
+@app.get("/api/dash/me")
+def dash_me(request: Request):
+    """Lightweight session probe — the watch page uses it to decide whether
+    to show the owner rail (edit toggles, viewers) beside the video."""
+    if not dash_authed(request):
+        raise HTTPException(401)
+    return {"ok": True}
+
+
 @app.post("/api/dash/logout")
 def dash_logout(request: Request):
     auth.destroy_session(request.cookies.get(config.DASH_COOKIE, ""))

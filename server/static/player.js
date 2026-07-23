@@ -241,6 +241,101 @@
     $("cPin").checked = false;
   });
 
+  // ---- owner rail (edit toggles + activity), Loom's video-page layout ----
+  const EDIT_LABELS = {
+    fillers: ["Remove filler words", "filler word"],
+    silences: ["Remove silences", "silence"],
+    captions: ["Stylized captions", "caption block"],
+  };
+
+  const buildRail = async () => {
+    const me = await fetch("/api/dash/me").catch(() => null);
+    if (!me || !me.ok) return;
+    document.body.classList.add("owner");
+    $("ownerRail").hidden = false;
+
+    // tabs
+    document.querySelectorAll(".rail .tab").forEach((t) =>
+      t.addEventListener("click", () => {
+        document.querySelectorAll(".rail .tab").forEach((x) =>
+          x.classList.toggle("active", x === t));
+        document.querySelectorAll(".tabpane").forEach((p) =>
+          (p.hidden = p.id !== `pane-${t.dataset.tab}`));
+      }));
+
+    // move the transcript into its rail tab
+    const ts = document.getElementById("transcriptSection");
+    if (ts) {
+      document.getElementById("pane-transcript").appendChild(ts);
+      ts.classList.add("in-rail");
+    } else {
+      document.getElementById("pane-transcript").innerHTML =
+        '<p class="empty">No transcript for this recording.</p>';
+    }
+
+    const refresh = async () => {
+      const d = await (await fetch(`/api/dash/recordings/${slug}`)).json();
+      const box = $("railEdits");
+      box.textContent = "";
+      const byKind = Object.fromEntries(d.edits.map((e) => [e.kind, e]));
+      for (const kind of ["fillers", "silences", "captions"]) {
+        const e = byKind[kind];
+        const [label, unit] = EDIT_LABELS[kind];
+        const row = document.createElement("label");
+        row.className = "edit-row" + (!e || !e.count ? " zero" : "");
+        const pendingNote = e && e.count && kind !== "captions" && e.enabled && !e.has_render
+          ? '<span class="note">render pending — the recorder picks this up</span>' : "";
+        row.innerHTML = `
+          <input type="checkbox" ${e?.enabled ? "checked" : ""}
+                 ${!e || !e.count ? "disabled" : ""}>
+          <span>${label}${pendingNote}</span>
+          <span class="cnt num">${e == null ? "not analyzed"
+            : `${e.count} found`}</span>`;
+        row.querySelector("input").addEventListener("change", async (ev) => {
+          await fetch(`/api/dash/recordings/${slug}/edits/${kind}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ enabled: ev.target.checked }),
+          });
+          refresh();
+        });
+        box.appendChild(row);
+      }
+
+      // activity
+      const vbox = $("railViewers");
+      vbox.textContent = "";
+      const viewers = d.viewers.filter((v) => !v.is_owner);
+      if (!viewers.length) {
+        vbox.innerHTML = '<p class="empty">No views yet — share the link.</p>';
+      }
+      const dur = d.recording.duration_s;
+      for (const v of viewers) {
+        const row = document.createElement("div");
+        row.className = "vrow";
+        const who = v.label || v.viewer_id.slice(0, 6);
+        const pct = dur ? Math.round((v.max_pos_s / dur) * 100) + "%" : "—";
+        row.innerHTML = `<b></b><span class="num">${fmt(v.watched_s)} · ${pct}</span>`;
+        row.querySelector("b").textContent = who;
+        vbox.appendChild(row);
+      }
+      const cv = $("railDrop");
+      const c2 = cv.getContext("2d");
+      c2.clearRect(0, 0, cv.width, cv.height);
+      const heat = await fetch(`/api/w/${slug}/heatmap`).then((r) => r.json())
+        .catch(() => null);
+      const buckets = heat?.buckets || new Array(100).fill(0);
+      const max = Math.max(1, ...buckets);
+      for (let i = 0; i < 100; i++) {
+        const h = (buckets[i] / max) * (cv.height - 4);
+        c2.fillStyle = "rgba(167, 139, 250, 0.8)";
+        c2.fillRect(i * (cv.width / 100), cv.height - h, cv.width / 100 - 1, h);
+      }
+    };
+    refresh();
+  };
+  buildRail();
+
   // ---- transcript click-to-seek (word-level if words.json exists) ----
   const tb = $("transcriptBody");
   if (tb && window.DR.hasWords) {

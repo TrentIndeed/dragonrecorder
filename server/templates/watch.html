@@ -27,6 +27,8 @@
     </div>
   </header>
 
+  <div class="layout">
+  <div class="left">
   <div class="stage" id="stage">
     <video id="video" preload="metadata" playsinline
       {% if r.has_thumb %}poster="/media/{{ slug }}/thumb.jpg"{% endif %}>
@@ -101,12 +103,35 @@
     </section>
 
     {% if r.transcript %}
-    <section class="transcript" aria-label="Transcript">
+    <section class="transcript" id="transcriptSection" aria-label="Transcript">
       <h2>Transcript <span class="pill ai-badge">AI</span></h2>
       <div id="transcriptBody" data-has-words="{{ 1 if r.has_words else 0 }}">{{ r.transcript }}</div>
     </section>
     {% endif %}
   </div>
+  </div><!-- /left -->
+
+  <!-- owner rail: only rendered when the dashboard session cookie is valid -->
+  <aside class="rail" id="ownerRail" hidden>
+    <div class="tabs" role="tablist">
+      <button class="tab active" data-tab="edit" role="tab">Edit</button>
+      <button class="tab" data-tab="activity" role="tab">Activity</button>
+      <button class="tab" data-tab="transcript" role="tab">Transcript</button>
+    </div>
+    <div class="tabpane" id="pane-edit">
+      <div class="powered">Powered by AI <span class="ai-star">✦</span></div>
+      <h3>Make edits</h3>
+      <div id="railEdits"></div>
+    </div>
+    <div class="tabpane" id="pane-activity" hidden>
+      <h3>Viewer attention</h3>
+      <canvas id="railDrop" width="290" height="70"></canvas>
+      <h3>Viewers</h3>
+      <div id="railViewers"></div>
+    </div>
+    <div class="tabpane" id="pane-transcript" hidden></div>
+  </aside>
+  </div><!-- /layout -->
 </main>
 <script>
 window.DR = {

@@ -192,6 +192,88 @@
 .transcript .tw:hover { background: rgba(167, 139, 250, 0.18); color: var(--text); }
 .transcript .tw.now { background: rgba(167, 139, 250, 0.3); color: var(--text); }
 
+/* owner rail (Loom-style right panel, shown for the signed-in owner) */
+.layout { display: block; }
+body.owner .watch { max-width: 1280px; }
+body.owner .layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 24px;
+  align-items: start;
+}
+.rail {
+  position: sticky;
+  top: 18px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 14px 16px 18px;
+}
+.rail .tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--line);
+  margin: -4px -6px 12px;
+  padding: 0 6px 8px;
+}
+.rail .tab {
+  background: none;
+  border: none;
+  color: var(--muted);
+  padding: 5px 10px;
+  border-radius: 7px;
+  font-size: 13.5px;
+}
+.rail .tab:hover { color: var(--text); background: var(--surface-2); }
+.rail .tab.active { color: var(--ai); background: rgba(167, 139, 250, 0.1); }
+.rail .powered {
+  color: var(--ai);
+  font-size: 12px;
+  margin-bottom: 10px;
+}
+.rail h3 {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--faint);
+  margin: 14px 0 8px;
+}
+.rail .edit-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  margin-bottom: 8px;
+  font-size: 13.5px;
+}
+.rail .edit-row.zero { color: var(--faint); }
+.rail .edit-row .cnt { color: var(--ai); margin-left: auto; font-size: 12.5px; }
+.rail .edit-row.zero .cnt { color: var(--faint); }
+.rail .edit-row .note { display: block; color: var(--faint); font-size: 11.5px; }
+.rail .edit-row input { accent-color: var(--ai); }
+.rail .vrow {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 2px;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+  color: var(--muted);
+}
+.rail .vrow b { color: var(--text); font-weight: 600; }
+#railDrop { width: 100%; height: 70px; }
+#pane-transcript .transcript { margin: 0; }
+#pane-transcript #transcriptBody { max-height: 55vh; }
+body.owner #transcriptSection { display: none; }
+body.owner #transcriptSection.in-rail { display: block; }
+@media (max-width: 1020px) {
+  body.owner .layout { display: block; }
+  .rail { position: static; margin-top: 20px; }
+  body.owner #transcriptSection { display: block; }
+}
+
 /* processing / gone pages */
 .centerpage {
   min-height: 100vh;
