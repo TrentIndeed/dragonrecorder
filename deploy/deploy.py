@@ -75,7 +75,7 @@ if [ ! -f .env ]; then
 cat > .env << 'ENVEOF'
 CAPTURE_TOKEN={capture_token}
 SERVER_URL={public_url}
-MIN_FREE_GB=3
+MIN_FREE_GB=10
 RETENTION_DAYS=14
 TELEGRAM_BOT_TOKEN={tg_token}
 TELEGRAM_CHAT_ID={tg_chat}
