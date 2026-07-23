@@ -62,8 +62,8 @@
   <div class="err" id="err"></div>
 
   <p class="hint">
-    <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>R</kbd> start / stop &nbsp;·&nbsp;
-    <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>D</kbd> draw mode<br>
+    <span id="hkRecord"></span> start / stop &nbsp;·&nbsp;
+    <span id="hkDraw"></span> draw mode<br>
     Stop puts the share link on your clipboard instantly — upload and
     processing run behind it.
   </p>
@@ -87,6 +87,10 @@
     fill($("camera"), info.cameras, info.settings.camera, "No camera");
     fill($("mic"), info.mics, info.settings.mic, "No microphone");
     $("blur").checked = info.settings.blur;
+    const kbd = (combo) => combo.split("+").map(k =>
+      `<kbd>${k[0].toUpperCase() + k.slice(1)}</kbd>`).join("+");
+    $("hkRecord").innerHTML = kbd(info.hotkeys.record);
+    $("hkDraw").innerHTML = kbd(info.hotkeys.draw);
     if (!info.token_ok) {
       $("err").textContent = "CAPTURE_TOKEN or SERVER_URL missing in .env — uploads will fail.";
     }

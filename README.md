@@ -12,11 +12,11 @@ stays full-size instead of collapsing like Loom's.*
 ## The flow
 
 1. **Setup once** — pick webcam, monitor, mic, blur in the panel. Persisted.
-2. **`Ctrl+Shift+R`** — 3-second countdown, recording starts. Webcam floats
+2. **`Ctrl+Alt+C`** — 3-second countdown, recording starts. Webcam floats
    as a draggable circle (dragging it mid-recording moves it in the video —
-   that's a feature). `Ctrl+Shift+D` toggles draw-on-screen mode; strokes
+   that's a feature). `Ctrl+Alt+D` toggles draw-on-screen mode; strokes
    fade after ~2 s.
-3. **`Ctrl+Shift+R` again** — recording stops and **the share link is
+3. **`Ctrl+Alt+C` again** — recording stops and **the share link is
    already on your clipboard** (measured: 0.04 s after stop). Upload runs in
    the background; anyone opening the link mid-upload sees a processing page
    that flips live automatically.

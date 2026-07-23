@@ -16,6 +16,10 @@ load_dotenv(CLIENT_DIR.parent / ".env")
 SERVER_URL = os.environ.get("SERVER_URL", "http://127.0.0.1:8082").rstrip("/")
 CAPTURE_TOKEN = os.environ.get("CAPTURE_TOKEN", "")
 WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "base.en")
+# global hotkeys ('keyboard' library syntax). Defaults avoid browser/editor
+# collisions (ctrl+shift+r is Chrome hard-refresh).
+HOTKEY_RECORD = os.environ.get("HOTKEY_RECORD", "ctrl+alt+c")
+HOTKEY_DRAW = os.environ.get("HOTKEY_DRAW", "ctrl+alt+d")
 
 APPDATA_DIR = Path(os.environ.get("APPDATA", Path.home())) / "DragonRecorder"
 APPDATA_DIR.mkdir(parents=True, exist_ok=True)

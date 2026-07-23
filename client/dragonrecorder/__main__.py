@@ -27,8 +27,8 @@ logging.basicConfig(
 )
 log = logging.getLogger("dr.main")
 
-HOTKEY_RECORD = "ctrl+shift+r"
-HOTKEY_DRAW = "ctrl+shift+d"
+HOTKEY_RECORD = config.HOTKEY_RECORD
+HOTKEY_DRAW = config.HOTKEY_DRAW
 LOCAL_KEEP_DAYS = 14
 
 
@@ -51,6 +51,7 @@ class PanelApi:
             "mics": dshow["mics"],
             "settings": settings,
             "token_ok": bool(config.CAPTURE_TOKEN and config.SERVER_URL),
+            "hotkeys": {"record": HOTKEY_RECORD, "draw": HOTKEY_DRAW},
         }
 
     def save_setup(self, s):
