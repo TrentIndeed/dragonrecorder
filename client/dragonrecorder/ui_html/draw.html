@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  body { margin: 0; background: transparent; overflow: hidden; cursor: crosshair; }
+  body.inactive { cursor: default; }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+  /* Fullscreen annotation layer. This window IS captured — strokes land in
+     the recording. Strokes fade out ~2s after they're drawn. Python toggles
+     WS_EX_TRANSPARENT on the window; setActive() just mirrors that state. */
+  const canvas = document.getElementById("c");
+  const ctx = canvas.getContext("2d");
+  const fit = () => {
+    canvas.width = innerWidth * devicePixelRatio;
+    canvas.height = innerHeight * devicePixelRatio;
+    ctx.scale(devicePixelRatio, devicePixelRatio);
+  };
+  fit();
+  addEventListener("resize", fit);
+
+  let active = false;
+  let drawing = false;
+  let strokes = [];   // {points: [{x,y}], bornAt, lastAt}
+  const FADE_AFTER = 2000, FADE_MS = 600;
+
+  window.setActive = (on) => {
+    active = on;
+    document.body.classList.toggle("inactive", !on);
+    if (!on) drawing = false;
+  };
+
+  canvas.addEventListener("pointerdown", (e) => {
+    if (!active) return;
+    drawing = true;
+    strokes.push({ points: [{ x: e.clientX, y: e.clientY }],
+                   bornAt: performance.now(), lastAt: performance.now() });
+  });
+  canvas.addEventListener("pointermove", (e) => {
+    if (!drawing) return;
+    const s = strokes[strokes.length - 1];
+    s.points.push({ x: e.clientX, y: e.clientY });
+    s.lastAt = performance.now();
+  });
+  addEventListener("pointerup", () => (drawing = false));
+
+  function render() {
+    ctx.clearRect(0, 0, innerWidth, innerHeight);
+    const now = performance.now();
+    strokes = strokes.filter((s) => now - s.lastAt < FADE_AFTER + FADE_MS);
+    for (const s of strokes) {
+      const age = now - s.lastAt;
+      const alpha = age < FADE_AFTER ? 1 : 1 - (age - FADE_AFTER) / FADE_MS;
+      ctx.strokeStyle = `rgba(255, 69, 69, ${alpha})`;
+      ctx.lineWidth = 4;
+      ctx.lineCap = ctx.lineJoin = "round";
+      ctx.beginPath();
+      s.points.forEach((p, i) =>
+        i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y));
+      ctx.stroke();
+    }
+    requestAnimationFrame(render);
+  }
+  render();
+</script>
+</body>
+</html>

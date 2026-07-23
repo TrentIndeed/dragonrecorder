@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  :root {
+    --bg: #101114; --surface: #191b1f; --line: #2e3138; --text: #e8e9eb;
+    --muted: #9aa0a8; --live: #ff4545; --ai: #a78bfa;
+    --mono: "Cascadia Mono", ui-monospace, Consolas, monospace;
+  }
+  * { box-sizing: border-box; user-select: none; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 14px system-ui, "Segoe UI", sans-serif; padding: 18px;
+  }
+  h1 { font-size: 15px; font-weight: 650; margin: 0 0 16px; letter-spacing: 0.01em; }
+  label { display: block; color: var(--muted); font-size: 12.5px; margin: 12px 0 4px; }
+  select {
+    width: 100%; background: var(--surface); color: var(--text);
+    border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px;
+    font: inherit;
+  }
+  .blurrow {
+    display: flex; align-items: center; gap: 8px; margin-top: 14px;
+    color: var(--muted);
+  }
+  .blurrow input { accent-color: var(--ai); }
+  button.start {
+    width: 100%; margin-top: 22px; padding: 12px; font: 600 15px system-ui;
+    color: #fff; background: var(--live); border: none; border-radius: 10px;
+    cursor: pointer;
+  }
+  button.start:hover { filter: brightness(1.08); }
+  button.start:disabled { background: var(--line); color: var(--muted); cursor: default; }
+  .hint { color: var(--muted); font-size: 12px; margin-top: 14px; line-height: 1.6; }
+  .hint kbd {
+    font-family: var(--mono); background: var(--surface);
+    border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px;
+  }
+  .err { color: var(--live); font-size: 12.5px; margin-top: 10px; min-height: 16px; }
+  a { color: var(--ai); }
+</style>
+</head>
+<body>
+  <h1>DragonRecorder</h1>
+
+  <label for="monitor">Screen</label>
+  <select id="monitor"></select>
+
+  <label for="camera">Camera</label>
+  <select id="camera"></select>
+
+  <label for="mic">Microphone</label>
+  <select id="mic"></select>
+
+  <div class="blurrow">
+    <input type="checkbox" id="blur">
+    <label for="blur" style="margin:0">Blur my background</label>
+  </div>
+
+  <button class="start" id="start">Start recording</button>
+  <div class="err" id="err"></div>
+
+  <p class="hint">
+    <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>R</kbd> start / stop &nbsp;·&nbsp;
+    <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>D</kbd> draw mode<br>
+    Stop puts the share link on your clipboard instantly — upload and
+    processing run behind it.
+  </p>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  let saveTimer;
+
+  async function load() {
+    const info = await pywebview.api.get_setup();
+    const fill = (sel, items, value, noneLabel) => {
+      sel.innerHTML = "";
+      if (noneLabel) sel.add(new Option(noneLabel, ""));
+      for (const it of items) sel.add(new Option(it.label ?? it, it.value ?? it));
+      sel.value = value;
+      if (sel.selectedIndex === -1) sel.selectedIndex = 0;
+    };
+    fill($("monitor"),
+      info.monitors.map(m => ({label: `Monitor ${m.index} — ${m.width}×${m.height}${m.primary ? " (primary)" : ""}`, value: m.index})),
+      String(info.settings.monitor));
+    fill($("camera"), info.cameras, info.settings.camera, "No camera");
+    fill($("mic"), info.mics, info.settings.mic, "No microphone");
+    $("blur").checked = info.settings.blur;
+    if (!info.token_ok) {
+      $("err").textContent = "CAPTURE_TOKEN or SERVER_URL missing in .env — uploads will fail.";
+    }
+  }
+
+  function save() {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => pywebview.api.save_setup({
+      monitor: parseInt($("monitor").value, 10),
+      camera: $("camera").value,
+      mic: $("mic").value,
+      blur: $("blur").checked,
+    }), 150);
+  }
+  for (const id of ["monitor", "camera", "mic", "blur"])
+    $(id).addEventListener("change", save);
+
+  $("start").addEventListener("click", async () => {
+    save();
+    await new Promise(r => setTimeout(r, 200));
+    pywebview.api.start_recording();
+  });
+
+  window.addEventListener("pywebviewready", load);
+</script>
+</body>
+</html>

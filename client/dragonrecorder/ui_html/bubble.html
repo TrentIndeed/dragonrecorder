@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  * { user-select: none; }
+  body { margin: 0; background: transparent; overflow: hidden; }
+  /* The bubble is a real window captured from screen — dragging it
+     mid-recording moves it in the video, which is the point. */
+  .wrap {
+    width: 212px; height: 212px; margin: 4px; border-radius: 50%;
+    overflow: hidden; position: relative; background: #101114;
+    border: 2px solid rgba(255, 255, 255, 0.35);
+    cursor: grab;
+  }
+  canvas, video {
+    position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    min-width: 100%; min-height: 100%;
+  }
+  .err {
+    position: absolute; inset: 0; display: none; align-items: center;
+    justify-content: center; text-align: center; color: #9aa0a8;
+    font: 11.5px system-ui; padding: 24px;
+  }
+</style>
+</head>
+<body>
+<div class="wrap pywebview-drag-region">
+  <video id="cam" autoplay muted playsinline style="display:none"></video>
+  <canvas id="out" class="pywebview-drag-region"></canvas>
+  <div class="err" id="err">Camera unavailable</div>
+</div>
+
+<script type="module">
+  /* Blur pipeline ported from ai_automation/video_effect: MediaPipe
+     selfie_segmenter confidence mask into the alpha channel, Canvas2D
+     blur() composite — background blurred, person sharp on top. */
+  const video = document.getElementById("cam");
+  const out = document.getElementById("out");
+  const ctx = out.getContext("2d");
+  const SIZE = 212;
+  out.width = out.height = SIZE;
+
+  let stream = null, segmenter = null, blurOn = false, running = false;
+  let loadingSegmenter = null;
+
+  const blurCanvas = new OffscreenCanvas(SIZE, SIZE);
+  const blurCtx = blurCanvas.getContext("2d");
+  const personCanvas = new OffscreenCanvas(SIZE, SIZE);
+  const personCtx = personCanvas.getContext("2d");
+  const maskCanvas = new OffscreenCanvas(SIZE, SIZE);
+  const maskCtx = maskCanvas.getContext("2d");
+  let maskImageData = null;
+
+  async function loadSegmenter() {
+    if (segmenter) return segmenter;
+    if (!loadingSegmenter) {
+      loadingSegmenter = (async () => {
+        const vision = await import(
+          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs");
+        const files = await vision.FilesetResolver.forVisionTasks(
+          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm");
+        segmenter = await vision.ImageSegmenter.createFromOptions(files, {
+          baseOptions: {
+            modelAssetPath:
+              "https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/latest/selfie_segmenter.tflite",
+            delegate: "GPU",
+          },
+          runningMode: "VIDEO",
+          outputConfidenceMasks: true,
+        });
+        return segmenter;
+      })();
+    }
+    return loadingSegmenter;
+  }
+
+  // square center-crop draw of the video frame
+  function drawFrame(c) {
+    const vw = video.videoWidth, vh = video.videoHeight;
+    if (!vw) return;
+    const s = Math.min(vw, vh);
+    c.drawImage(video, (vw - s) / 2, (vh - s) / 2, s, s, 0, 0, SIZE, SIZE);
+  }
+
+  function drawBlurred(result) {
+    blurCtx.filter = "blur(9px)";
+    drawFrame(blurCtx);
+    blurCtx.filter = "none";
+
+    drawFrame(personCtx);
+    const mask = result.confidenceMasks[0];
+    const conf = mask.getAsFloat32Array();
+    const mw = mask.width, mh = mask.height;
+    if (!maskImageData || maskImageData.width !== mw) {
+      maskImageData = new ImageData(mw, mh);
+      maskCanvas.width = mw; maskCanvas.height = mh;
+    }
+    const px = maskImageData.data;
+    for (let i = 0; i < conf.length; i++) {
+      px[i * 4 + 3] = conf[i] * 255;
+    }
+    maskCtx.putImageData(maskImageData, 0, 0);
+    personCtx.globalCompositeOperation = "destination-in";
+    personCtx.filter = "blur(3px)";
+    personCtx.drawImage(maskCanvas, 0, 0, SIZE, SIZE);
+    personCtx.filter = "none";
+    personCtx.globalCompositeOperation = "source-over";
+
+    ctx.drawImage(blurCanvas, 0, 0);
+    ctx.drawImage(personCanvas, 0, 0);
+  }
+
+  async function loop() {
+    if (!running) return;
+    if (video.readyState >= 2) {
+      if (blurOn && segmenter) {
+        const result = segmenter.segmentForVideo(video, performance.now());
+        drawBlurred(result);
+        result.close();
+      } else {
+        drawFrame(ctx);
+      }
+    }
+    requestAnimationFrame(loop);
+  }
+
+  window.startCamera = async (dshowName, blur) => {
+    blurOn = blur;
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const match = devices.find(
+        (d) => d.kind === "videoinput" && d.label === dshowName);
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: match ? { deviceId: { exact: match.deviceId } } : true,
+        audio: false,
+      });
+      video.srcObject = stream;
+      await video.play();
+      document.getElementById("err").style.display = "none";
+      if (blurOn) await loadSegmenter();
+      running = true;
+      loop();
+    } catch (e) {
+      document.getElementById("err").style.display = "flex";
+      document.getElementById("err").textContent =
+        "Camera unavailable: " + e.name;
+    }
+  };
+
+  window.setBlur = async (on) => {
+    blurOn = on;
+    if (on) await loadSegmenter();
+  };
+
+  window.stopCamera = () => {
+    running = false;
+    if (stream) stream.getTracks().forEach((t) => t.stop());
+    stream = null;
+    ctx.clearRect(0, 0, SIZE, SIZE);
+  };
+</script>
+</body>
+</html>
