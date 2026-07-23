@@ -169,6 +169,7 @@ class Session:
                 log.exception("clipboard copy failed")
             self.ui.hide_toolbar()
             self.ui.hide_bubble()
+            self.ui.show_panel()   # ready for the next take, Loom-style
             self.notify("Link copied", url)
         threading.Thread(target=self._finish_and_upload, args=(rec, slug),
                          daemon=True).start()
@@ -228,6 +229,7 @@ class Session:
             rec.abort()
             self.ui.hide_toolbar()
             self.ui.hide_bubble()
+            self.ui.show_panel()
         threading.Thread(target=self._cleanup_take, args=(rec, slug),
                          daemon=True).start()
         self.notify("Take trashed", "No link, nothing uploaded.")

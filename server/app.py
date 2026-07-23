@@ -14,6 +14,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+import auth
 import config
 import db
 from notify import send_telegram
@@ -412,11 +413,27 @@ async def toggle_reaction(slug: str, request: Request, response: Response,
 
 
 # ---------------------------------------------------------------- dashboard
-# Caddy basicauth guards /dash and /api/dash in production; the app itself is
-# single-user and does not implement auth.
+# Single-user session login, same scheme as remote_pc (auth.py). The login
+# endpoints are rate limited per IP and ping Telegram like remote_pc does.
+
+def dash_authed(request: Request) -> bool:
+    return auth.validate_token(request.cookies.get(config.DASH_COOKIE, ""))
+
+
+def require_dash(request: Request) -> None:
+    if not dash_authed(request):
+        raise HTTPException(401, "unauthorized")
+
+
+def client_ip(request: Request) -> str:
+    fwd = request.headers.get("x-forwarded-for", "")
+    return fwd.split(",")[0].strip() if fwd else (request.client.host or "?")
+
 
 @app.get("/dash", response_class=HTMLResponse)
 def dashboard(request: Request):
+    if not dash_authed(request):
+        return templates.TemplateResponse(request, "login.html", {})
     resp = templates.TemplateResponse(request, "dash.html", {})
     # Visiting the dashboard marks this browser as the owner so its plays
     # don't count as views or fire notifications.
@@ -424,7 +441,41 @@ def dashboard(request: Request):
     return resp
 
 
-@app.get("/api/dash/recordings")
+@app.post("/api/dash/login")
+async def dash_login(request: Request):
+    ip = client_ip(request)
+    if auth.is_locked(ip):
+        raise HTTPException(429, "too many attempts — try again later")
+    body = await request.json()
+    if auth.check_credentials(body.get("username", ""), body.get("password", "")):
+        auth.clear_failures(ip)
+        token = auth.create_session()
+        send_telegram(f"✅ DragonRecorder dashboard login\nIP: {ip}")
+        resp = JSONResponse({"ok": True})
+        max_age = config.DASH_SESSION_TTL if body.get("remember", True) else None
+        resp.set_cookie(config.DASH_COOKIE, token, max_age=max_age, path="/",
+                        httponly=True, samesite="lax")
+        # the owner cookie rides along so logins never count as views
+        resp.set_cookie("dr_owner", "1", max_age=10 * 365 * 24 * 3600,
+                        samesite="lax")
+        return resp
+    auth.record_failure(ip)
+    if auth.is_locked(ip):
+        send_telegram(f"🚫 DragonRecorder dashboard: too many failed logins — "
+                      f"IP locked out\nIP: {ip}")
+    await asyncio.sleep(1.0)
+    raise HTTPException(401, "wrong username or password")
+
+
+@app.post("/api/dash/logout")
+def dash_logout(request: Request):
+    auth.destroy_session(request.cookies.get(config.DASH_COOKIE, ""))
+    resp = JSONResponse({"ok": True})
+    resp.delete_cookie(config.DASH_COOKIE, path="/")
+    return resp
+
+
+@app.get("/api/dash/recordings", dependencies=[Depends(require_dash)])
 def dash_list():
     with db.connect() as dbc:
         rows = dbc.execute(
@@ -436,7 +487,7 @@ def dash_list():
     return {"recordings": [dict(r) for r in rows]}
 
 
-@app.get("/api/dash/recordings/{slug}")
+@app.get("/api/dash/recordings/{slug}", dependencies=[Depends(require_dash)])
 def dash_detail(slug: str):
     with db.connect() as dbc:
         row = get_recording(dbc, slug)
@@ -455,7 +506,7 @@ def dash_detail(slug: str):
     }
 
 
-@app.patch("/api/dash/recordings/{slug}")
+@app.patch("/api/dash/recordings/{slug}", dependencies=[Depends(require_dash)])
 async def dash_update(slug: str, request: Request):
     body = await request.json()
     with db.connect() as dbc:
@@ -469,7 +520,7 @@ async def dash_update(slug: str, request: Request):
     return {"ok": True}
 
 
-@app.delete("/api/dash/recordings/{slug}")
+@app.delete("/api/dash/recordings/{slug}", dependencies=[Depends(require_dash)])
 def dash_delete(slug: str):
     with db.connect() as dbc:
         get_recording(dbc, slug)
@@ -480,7 +531,7 @@ def dash_delete(slug: str):
     return {"ok": True}
 
 
-@app.post("/api/dash/recordings/{slug}/edits/{kind}")
+@app.post("/api/dash/recordings/{slug}/edits/{kind}", dependencies=[Depends(require_dash)])
 async def dash_toggle_edit(slug: str, kind: str, request: Request):
     body = await request.json()
     enabled = int(bool(body.get("enabled")))
@@ -511,7 +562,7 @@ def read_auto_apply():
         return get_auto_apply(dbc)
 
 
-@app.put("/api/dash/settings/auto-apply")
+@app.put("/api/dash/settings/auto-apply", dependencies=[Depends(require_dash)])
 async def write_auto_apply(request: Request):
     body = await request.json()
     clean = {k: bool(body[k]) for k in ALL_EDIT_KINDS if k in body}

@@ -30,6 +30,17 @@
     captions: ["Captions", "caption block"],
   };
 
+  // session expired → back to the login card
+  const guard = (r) => {
+    if (r.status === 401) { location.reload(); throw new Error("unauthorized"); }
+    return r;
+  };
+
+  document.getElementById("logout")?.addEventListener("click", async () => {
+    await fetch("/api/dash/logout", { method: "POST" });
+    location.reload();
+  });
+
   // ---- auto-apply settings ----
   const loadAutoApply = async () => {
     const s = await (await fetch("/api/settings/auto-apply")).json();
@@ -48,7 +59,7 @@
 
   // ---- list ----
   const load = async () => {
-    const data = await (await fetch("/api/dash/recordings")).json();
+    const data = await guard(await fetch("/api/dash/recordings")).json();
     const list = $("list");
     list.textContent = "";
     $("emptyMsg").hidden = data.recordings.length > 0;

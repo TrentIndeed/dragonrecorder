@@ -11,8 +11,12 @@ stays full-size instead of collapsing like Loom's.*
 
 ## The flow
 
-1. **Setup once** — pick webcam, monitor, mic, blur in the panel. Persisted.
-2. **`Ctrl+Alt+C`** — 3-second countdown, recording starts. Webcam floats
+<img src="docs/panel.png" width="280" align="right" alt="Launcher panel">
+
+1. **`Ctrl+Alt+C`** opens the launcher, top-right of your screen — pick
+   monitor, camera, mic, blur (persisted; it's one click from Start every
+   time after).
+2. **Start Recording** — 3-second countdown, recording starts. Webcam floats
    as a draggable circle (dragging it mid-recording moves it in the video —
    that's a feature). `Ctrl+Alt+D` toggles draw-on-screen mode; strokes
    fade after ~2 s.
@@ -42,11 +46,12 @@ matches your NVIDIA driver (older drivers need ffmpeg ≤7.x — grab a
 `FFMPEG_PATH`). Without NVENC it falls back to gdigrab + x264 automatically.
 
 ```
-cd client
-pip install -r requirements.txt
-copy ..\.env.example ..\.env    # set SERVER_URL, CAPTURE_TOKEN, FFMPEG_PATH
-python -m dragonrecorder
+copy .env.example .env    # set SERVER_URL, CAPTURE_TOKEN, FFMPEG_PATH
+run.bat
 ```
+
+`run.bat` (or `run.ps1`) takes no flags: first run creates the venv and
+installs dependencies, then it starts the tray app.
 
 AI titles use the `claude` CLI if installed (local subscription, no API
 key); otherwise a heuristic title from the transcript's first words.
@@ -57,7 +62,9 @@ FastAPI + SQLite behind Caddy, shipped as Docker Compose. Caddy serves the
 video bytes directly (range requests = scrubbing); the app only handles
 metadata, analytics, and lifecycle. 14-day retention with a daily reaper,
 a free-disk guard, `/healthz`, and Telegram pings for failures and new views
-(your own plays excluded — visiting `/dash` marks your browser as the owner).
+(your own plays excluded — signing in to `/dash` marks your browser as the
+owner). The dashboard has a single-user session login (same scheme as
+remote_pc: pbkdf2 password, per-IP lockout, HMAC session cookie).
 
 ```
 python deploy/deploy.py --ip <box-ip> [--domain rec.example.com]

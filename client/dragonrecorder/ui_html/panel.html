@@ -3,70 +3,129 @@
 <head>
 <meta charset="utf-8">
 <style>
+  /* Loom-style compact launcher: floats top-right of the chosen monitor,
+     opened by tray or the record hotkey. Dark, near-opaque, instrument-like. */
   :root {
-    --bg: #101114; --surface: #191b1f; --line: #2e3138; --text: #e8e9eb;
-    --muted: #9aa0a8; --live: #ff4545; --ai: #a78bfa;
+    --bg: #17181c; --row: #24262c; --row-hi: #2c2f36; --line: #33363d;
+    --text: #e8e9eb; --muted: #9aa0a8; --live: #ff4b33; --ai: #a78bfa;
     --mono: "Cascadia Mono", ui-monospace, Consolas, monospace;
   }
   * { box-sizing: border-box; user-select: none; }
-  body {
-    margin: 0; background: var(--bg); color: var(--text);
-    font: 14px system-ui, "Segoe UI", sans-serif; padding: 18px;
+  body { margin: 0; background: transparent; overflow: hidden; }
+  .panel {
+    margin: 6px; background: var(--bg); border: 1px solid var(--line);
+    border-radius: 18px; padding: 12px; color: var(--text);
+    font: 13.5px system-ui, "Segoe UI", sans-serif;
+    box-shadow: 0 10px 34px rgba(0, 0, 0, 0.5);
   }
-  h1 { font-size: 15px; font-weight: 650; margin: 0 0 16px; letter-spacing: 0.01em; }
-  label { display: block; color: var(--muted); font-size: 12.5px; margin: 12px 0 4px; }
-  select {
-    width: 100%; background: var(--surface); color: var(--text);
-    border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px;
-    font: inherit;
+  .top {
+    display: flex; align-items: center; gap: 4px; padding: 0 2px 10px;
+    cursor: grab;
   }
-  .blurrow {
-    display: flex; align-items: center; gap: 8px; margin-top: 14px;
-    color: var(--muted);
+  .top .mode {
+    width: 38px; height: 32px; border-radius: 9px; border: none;
+    background: none; color: var(--muted); display: flex; align-items: center;
+    justify-content: center; cursor: pointer;
   }
-  .blurrow input { accent-color: var(--ai); }
-  button.start {
-    width: 100%; margin-top: 22px; padding: 12px; font: 600 15px system-ui;
-    color: #fff; background: var(--live); border: none; border-radius: 10px;
-    cursor: pointer;
+  .top .mode.active { background: var(--row-hi); color: var(--ai); }
+  .top .mode:disabled { color: #4a4e55; cursor: default; }
+  .top .spacer { flex: 1; }
+  .top .close { color: var(--muted); }
+  .top .close:hover { color: var(--text); background: var(--row); }
+  .top svg { width: 18px; height: 18px; fill: currentColor; }
+
+  .row {
+    display: flex; align-items: center; gap: 10px; background: var(--row);
+    border: 1px solid transparent; border-radius: 11px; padding: 0 12px;
+    height: 44px; margin-bottom: 8px;
   }
-  button.start:hover { filter: brightness(1.08); }
-  button.start:disabled { background: var(--line); color: var(--muted); cursor: default; }
-  .hint { color: var(--muted); font-size: 12px; margin-top: 14px; line-height: 1.6; }
-  .hint kbd {
-    font-family: var(--mono); background: var(--surface);
-    border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px;
+  .row:hover { background: var(--row-hi); }
+  .row svg { width: 17px; height: 17px; fill: var(--muted); flex: none; }
+  .row select {
+    flex: 1; background: transparent; color: var(--text); border: none;
+    font: inherit; outline: none; appearance: none; cursor: pointer;
+    text-overflow: ellipsis; padding-right: 14px;
   }
-  .err { color: var(--live); font-size: 12.5px; margin-top: 10px; min-height: 16px; }
-  a { color: var(--ai); }
+  .row select option { background: var(--row); color: var(--text); }
+  .row .chev { margin-left: -14px; pointer-events: none; }
+
+  .start {
+    width: 100%; height: 46px; margin: 4px 0 10px; border: none;
+    border-radius: 11px; background: var(--live); color: #fff;
+    font: 600 15px system-ui; cursor: pointer;
+  }
+  .start:hover { filter: brightness(1.07); }
+
+  .bottom { display: flex; gap: 6px; justify-content: space-around; }
+  .bottom button {
+    flex: 1; background: none; border: none; border-radius: 10px;
+    color: var(--muted); font: 12px system-ui; padding: 7px 0 6px;
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+    cursor: pointer; position: relative;
+  }
+  .bottom button:hover { background: var(--row); color: var(--text); }
+  .bottom button svg { width: 18px; height: 18px; fill: currentColor; }
+  .bottom .dot {
+    position: absolute; top: 4px; right: 22%; width: 7px; height: 7px;
+    border-radius: 50%; background: var(--live); display: none;
+  }
+  .bottom button.on .dot { display: block; }
+  .bottom button.on { color: var(--ai); }
+  .err { color: var(--live); font-size: 12px; min-height: 15px; padding: 2px 4px 0; }
 </style>
 </head>
 <body>
-  <h1>DragonRecorder</h1>
-
-  <label for="monitor">Screen</label>
-  <select id="monitor"></select>
-
-  <label for="camera">Camera</label>
-  <select id="camera"></select>
-
-  <label for="mic">Microphone</label>
-  <select id="mic"></select>
-
-  <div class="blurrow">
-    <input type="checkbox" id="blur">
-    <label for="blur" style="margin:0">Blur my background</label>
+<div class="panel">
+  <div class="top pywebview-drag-region">
+    <button class="mode active" title="Screen + camera">
+      <svg viewBox="0 0 24 24"><path d="M3 5h18a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1h-7v2h3v2H7v-2h3v-2H3a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"/></svg>
+    </button>
+    <button class="mode" disabled title="Camera only — later">
+      <svg viewBox="0 0 24 24"><path d="M17 10.5V7a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-3.5l4 4v-11l-4 4z"/></svg>
+    </button>
+    <button class="mode" disabled title="Screenshot — later">
+      <svg viewBox="0 0 24 24"><path d="M9 3l-1.5 2H4a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-3.5L15 3H9zm3 5a4.5 4.5 0 1 1 0 9 4.5 4.5 0 0 1 0-9z"/></svg>
+    </button>
+    <div class="spacer"></div>
+    <button class="mode close" id="close" title="Hide (hotkey reopens)">
+      <svg viewBox="0 0 24 24"><path d="M6.4 5 5 6.4 10.6 12 5 17.6 6.4 19 12 13.4 17.6 19l1.4-1.4L13.4 12 19 6.4 17.6 5 12 10.6z"/></svg>
+    </button>
   </div>
 
-  <button class="start" id="start">Start recording</button>
+  <label class="row" title="Screen to record">
+    <svg viewBox="0 0 24 24"><path d="M3 5h18a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1h-7v2h3v2H7v-2h3v-2H3a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"/></svg>
+    <select id="monitor" aria-label="Screen"></select>
+    <svg class="chev" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5z"/></svg>
+  </label>
+  <label class="row" title="Camera bubble">
+    <svg viewBox="0 0 24 24"><path d="M17 10.5V7a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-3.5l4 4v-11l-4 4z"/></svg>
+    <select id="camera" aria-label="Camera"></select>
+    <svg class="chev" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5z"/></svg>
+  </label>
+  <label class="row" title="Microphone">
+    <svg viewBox="0 0 24 24"><path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v5a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z"/></svg>
+    <select id="mic" aria-label="Microphone"></select>
+    <svg class="chev" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5z"/></svg>
+  </label>
+
+  <button class="start" id="start">Start Recording</button>
   <div class="err" id="err"></div>
 
-  <p class="hint">
-    <span id="hkRecord"></span> start / stop &nbsp;·&nbsp;
-    <span id="hkDraw"></span> draw mode<br>
-    Stop puts the share link on your clipboard instantly — upload and
-    processing run behind it.
-  </p>
+  <div class="bottom">
+    <button id="blur"><span class="dot"></span>
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-dasharray="3 3"/></svg>
+      Blur
+    </button>
+    <button id="dash">
+      <svg viewBox="0 0 24 24"><path d="M3 3h8v8H3V3zm10 0h8v5h-8V3zM3 13h8v8H3v-8zm10-3h8v11h-8V10z"/></svg>
+      Dashboard
+    </button>
+    <button id="hotkeyBtn" title="">
+      <svg viewBox="0 0 24 24"><path d="M4 5h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2zm1 3v2h2V8H5zm4 0v2h2V8H9zm4 0v2h2V8h-2zm4 0v2h2V8h-2zM5 12v2h2v-2H5zm4 0v2h6v-2H9zm8 0v2h2v-2h-2z"/></svg>
+      <span id="hotkeyLabel">Hotkey</span>
+    </button>
+  </div>
+</div>
 
 <script>
   const $ = (id) => document.getElementById(id);
@@ -82,17 +141,16 @@
       if (sel.selectedIndex === -1) sel.selectedIndex = 0;
     };
     fill($("monitor"),
-      info.monitors.map(m => ({label: `Monitor ${m.index} — ${m.width}×${m.height}${m.primary ? " (primary)" : ""}`, value: m.index})),
+      info.monitors.map(m => ({label: `Screen ${m.index} — ${m.width}×${m.height}${m.primary ? " (primary)" : ""}`, value: m.index})),
       String(info.settings.monitor));
-    fill($("camera"), info.cameras, info.settings.camera, "No camera");
-    fill($("mic"), info.mics, info.settings.mic, "No microphone");
-    $("blur").checked = info.settings.blur;
-    const kbd = (combo) => combo.split("+").map(k =>
-      `<kbd>${k[0].toUpperCase() + k.slice(1)}</kbd>`).join("+");
-    $("hkRecord").innerHTML = kbd(info.hotkeys.record);
-    $("hkDraw").innerHTML = kbd(info.hotkeys.draw);
+    fill($("camera"), info.cameras, info.settings.camera, "No Camera");
+    fill($("mic"), info.mics, info.settings.mic, "No Microphone");
+    $("blur").classList.toggle("on", info.settings.blur);
+    $("hotkeyLabel").textContent = info.hotkeys.record
+      .split("+").map(k => k[0].toUpperCase() + k.slice(1)).join("+");
+    $("hotkeyBtn").title = `${$("hotkeyLabel").textContent} opens this panel / stops recording`;
     if (!info.token_ok) {
-      $("err").textContent = "CAPTURE_TOKEN or SERVER_URL missing in .env — uploads will fail.";
+      $("err").textContent = "CAPTURE_TOKEN / SERVER_URL missing in .env — uploads will fail.";
     }
   }
 
@@ -102,12 +160,18 @@
       monitor: parseInt($("monitor").value, 10),
       camera: $("camera").value,
       mic: $("mic").value,
-      blur: $("blur").checked,
+      blur: $("blur").classList.contains("on"),
     }), 150);
   }
-  for (const id of ["monitor", "camera", "mic", "blur"])
+  for (const id of ["monitor", "camera", "mic"])
     $(id).addEventListener("change", save);
 
+  $("blur").addEventListener("click", () => {
+    $("blur").classList.toggle("on");
+    save();
+  });
+  $("dash").addEventListener("click", () => pywebview.api.open_dashboard());
+  $("close").addEventListener("click", () => pywebview.api.hide_panel());
   $("start").addEventListener("click", async () => {
     save();
     await new Promise(r => setTimeout(r, 200));

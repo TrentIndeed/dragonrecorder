@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in — DragonRecorder</title>
+<link rel="stylesheet" href="/static/shared.css">
+<style>
+  .login { position: fixed; inset: 0; display: grid; place-items: center; }
+  .card {
+    width: min(360px, 90vw);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 26px;
+  }
+  .card h1 { margin: 0 0 4px; font-size: 18px; }
+  .card p { margin: 0 0 18px; color: var(--muted); font-size: 13px; }
+  .card label { display: block; font-size: 12px; color: var(--muted); margin: 12px 0 5px; }
+  .card input { width: 100%; }
+  .remember {
+    display: flex; align-items: center; gap: 9px; font-size: 13px;
+    color: var(--text); margin: 16px 0 0; cursor: pointer;
+  }
+  .remember input { width: auto; margin: 0; accent-color: var(--ai); }
+  .card button {
+    width: 100%; margin-top: 18px; background: var(--ai-dim);
+    border-color: var(--ai-dim); color: #fff; padding: 10px;
+  }
+  .card button:hover { background: var(--ai); }
+  #err { color: var(--live); font-size: 13px; min-height: 18px; margin-top: 10px; }
+</style>
+</head>
+<body>
+<section class="login">
+  <form class="card" id="form" autocomplete="on">
+    <h1>DragonRecorder</h1>
+    <p>Sign in to see your recordings and viewers.</p>
+    <label for="u">Username</label>
+    <input id="u" name="username" autocomplete="username" autocapitalize="off" spellcheck="false">
+    <label for="p">Password</label>
+    <input id="p" name="password" type="password" autocomplete="current-password">
+    <label class="remember"><input type="checkbox" id="remember" checked> Remember me on this device</label>
+    <button id="btn" type="submit">Sign in</button>
+    <div id="err"></div>
+  </form>
+</section>
+<script>
+  const form = document.getElementById("form");
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById("btn");
+    btn.disabled = true;
+    document.getElementById("err").textContent = "";
+    try {
+      const r = await fetch("/api/dash/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          username: document.getElementById("u").value,
+          password: document.getElementById("p").value,
+          remember: document.getElementById("remember").checked,
+        }),
+      });
+      if (r.ok) return location.reload();
+      const d = await r.json().catch(() => ({}));
+      document.getElementById("err").textContent =
+        d.detail || "Sign-in failed — try again.";
+    } catch {
+      document.getElementById("err").textContent = "Network error — try again.";
+    }
+    btn.disabled = false;
+  });
+</script>
+</body>
+</html>

@@ -64,6 +64,13 @@ class PanelApi:
         self.app.overlays.hide_panel()
         self.app.session.toggle()
 
+    def hide_panel(self):
+        self.app.overlays.hide_panel()
+
+    def open_dashboard(self):
+        import webbrowser
+        webbrowser.open(f"{config.SERVER_URL}/dash")
+
 
 class ToolbarApi:
     """JS bridge for the recording toolbar."""
@@ -181,13 +188,22 @@ class App:
 
     # ---- wiring ----
 
+    def on_record_hotkey(self):
+        """Idle: the hotkey opens/closes the launcher panel (recording starts
+        from its button, like Loom). Countdown: cancels. Recording: stops."""
+        if self.session.state == session.State.IDLE:
+            self.overlays.toggle_panel()
+        else:
+            self.overlays.hide_panel()
+            self.session.toggle()
+
     def on_started(self):
         """Runs once pywebview's event loop is live."""
         self.overlays.ensure_toolbar(ToolbarApi(self))
         self.overlays.ensure_countdown()
         if config.load_settings()["camera"]:
             self.overlays.ensure_bubble()
-        keyboard.add_hotkey(HOTKEY_RECORD, self.session.toggle)
+        keyboard.add_hotkey(HOTKEY_RECORD, self.on_record_hotkey)
         keyboard.add_hotkey(
             HOTKEY_DRAW,
             lambda: self.overlays.toggle_draw(config.load_settings()["monitor"]))

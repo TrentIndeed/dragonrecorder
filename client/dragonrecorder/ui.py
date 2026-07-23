@@ -19,6 +19,8 @@ log = logging.getLogger("dr.ui")
 TOOLBAR_W, TOOLBAR_H = 460, 64
 BUBBLE = 220
 COUNTDOWN = 180
+PANEL_W, PANEL_H = 336, 396
+PANEL_MARGIN = 14
 
 
 def _url(name: str) -> str:
@@ -36,23 +38,42 @@ class Overlays:
         self._draw_hwnd = 0
         self._lock = threading.Lock()
 
-    # ---- panel (pre-record) ----
+    # ---- panel (pre-record launcher, Loom-style, top-right) ----
 
     def create_panel(self, js_api) -> "webview.Window":
+        x, y = self._panel_pos()
         self.panel = webview.create_window(
             "DragonRecorder", _url("panel.html"), js_api=js_api,
-            width=380, height=560, resizable=False, on_top=False,
-            background_color="#101114")
+            x=x, y=y, width=PANEL_W, height=PANEL_H, frameless=True,
+            resizable=False, on_top=True, transparent=True,
+            background_color="#17181c")
+        self._panel_visible = True
+        # excluded from capture like the toolbar: if it's open when recording
+        # starts (countdown overlap), it must not land in the video
+        self._exclude_later("DragonRecorder")
         return self.panel
+
+    def _panel_pos(self) -> tuple[int, int]:
+        geo = devices.monitor_geometry(config.load_settings()["monitor"])
+        return (geo["left"] + geo["width"] - PANEL_W - PANEL_MARGIN,
+                geo["top"] + PANEL_MARGIN)
 
     def show_panel(self):
         if self.panel:
+            self.panel.move(*self._panel_pos())
             self.panel.show()
-            self.panel.restore()
+            self._panel_visible = True
 
     def hide_panel(self):
         if self.panel:
             self.panel.hide()
+            self._panel_visible = False
+
+    def toggle_panel(self):
+        if getattr(self, "_panel_visible", False):
+            self.hide_panel()
+        else:
+            self.show_panel()
 
     # ---- toolbar (capture-excluded) ----
 
