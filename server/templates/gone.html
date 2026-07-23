@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ "Recording expired" if reason == "expired" else "Not found" }} — DragonRecorder</title>
+<link rel="stylesheet" href="/static/shared.css">
+<link rel="stylesheet" href="/static/player.css">
+</head>
+<body>
+<div class="centerpage">
+  {% if reason == "expired" %}
+  <h1>This recording has expired</h1>
+  <p>Recordings live for 14 days. This one has been cleaned up — ask the sender
+     to re-record or re-share if you still need it.</p>
+  {% else %}
+  <h1>No recording here</h1>
+  <p>This link doesn't point to anything. Check that it was copied completely.</p>
+  {% endif %}
+</div>
+</body>
+</html>

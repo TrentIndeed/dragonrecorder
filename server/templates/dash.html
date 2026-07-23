@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DragonRecorder</title>
+<link rel="stylesheet" href="/static/shared.css">
+<link rel="stylesheet" href="/static/dash.css">
+</head>
+<body>
+<main class="dash">
+  <header class="dhead">
+    <h1>DragonRecorder</h1>
+    <div class="autoapply" id="autoApply">
+      <span class="lbl">Auto-apply to new recordings:</span>
+      <label><input type="checkbox" data-kind="fillers"> Remove filler words</label>
+      <label><input type="checkbox" data-kind="silences"> Remove silences</label>
+      <label><input type="checkbox" data-kind="captions"> Captions</label>
+    </div>
+  </header>
+
+  <div id="list"></div>
+  <p class="empty" id="emptyMsg" hidden>Nothing recorded yet. Hit the record
+    hotkey on your machine and your first take will show up here.</p>
+
+  <dialog id="detail">
+    <div class="dhd">
+      <h2 id="dTitle"></h2>
+      <button id="dClose" aria-label="Close">✕</button>
+    </div>
+    <div class="dbody">
+      <section>
+        <h3>Edits <span class="pill ai-badge">AI-detected</span></h3>
+        <div id="dEdits"></div>
+      </section>
+      <section>
+        <h3>Viewers</h3>
+        <canvas id="dropoff" width="600" height="80"></canvas>
+        <table id="dViewers">
+          <thead><tr><th>Who</th><th>First seen</th><th class="num">Watched</th><th class="num">Reached</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </section>
+      <section id="dTranscriptWrap" hidden>
+        <h3>Transcript <span class="pill ai-badge">AI</span></h3>
+        <div id="dTranscript"></div>
+      </section>
+    </div>
+  </dialog>
+</main>
+<div class="toast" id="toast" role="status"></div>
+<script src="/static/dash.js"></script>
+</body>
+</html>
