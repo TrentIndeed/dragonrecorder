@@ -1,0 +1,19 @@
+# DragonRecorder site block — appended to /etc/caddy/Caddyfile by deploy.py.
+# {SITE} is the domain (auto-HTTPS) or http://<ip> when no domain is set.
+# {BASICAUTH_HASH} comes from `caddy hash-password`.
+
+{SITE} {
+    # Video bytes served by Caddy, not the app — range requests make
+    # scrubbing work.
+    handle_path /media/* {
+        root * /opt/dragonrecorder/data
+        file_server
+    }
+
+    @dash path /dash /dash/* /api/dash/*
+    basicauth @dash {
+        trenton {BASICAUTH_HASH}
+    }
+
+    reverse_proxy localhost:8082
+}

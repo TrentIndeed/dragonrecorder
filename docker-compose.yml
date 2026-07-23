@@ -1,0 +1,16 @@
+services:
+  dragonrecorder:
+    build: ./server
+    restart: unless-stopped
+    # Caddy fronts everything; keep the app loopback-only on the host.
+    ports:
+      - "127.0.0.1:8082:8080"
+    env_file:
+      - .env
+    environment:
+      - DATA_DIR=/app/data
+      - DB_PATH=/app/data/dragonrecorder.sqlite3
+    volumes:
+      # bind mount (not a named volume): Caddy serves the video bytes
+      # directly from this path for range requests
+      - ./data:/app/data
