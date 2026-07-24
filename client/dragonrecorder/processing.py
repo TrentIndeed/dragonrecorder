@@ -124,6 +124,37 @@ def detect_fillers(words: list[dict]) -> list[list[float]]:
     return cuts
 
 
+TARGET_WPM = 165          # brisk, energetic sales-pitch delivery
+SPEED_STEPS = [1.0, 1.1, 1.2, 1.25, 1.3, 1.4, 1.5]
+
+
+def measure_wpm(words: list[dict]) -> float:
+    """Words per minute of actual speech (excludes gaps > 2s so pauses don't
+    deflate the rate). Word-level whisper timestamps make this exact."""
+    if len(words) < 5:
+        return 0.0
+    speech_s = 0.0
+    for w in words:
+        dur = w["end"] - w["start"]
+        if 0 < dur < 2.0:
+            speech_s += dur
+    # bridge tiny inter-word gaps so the rate reflects delivery, not silence
+    for a, b in zip(words, words[1:]):
+        gap = b["start"] - a["end"]
+        if 0 < gap < 0.4:
+            speech_s += gap
+    return (len(words) / speech_s * 60.0) if speech_s > 1 else 0.0
+
+
+def best_speed(wpm: float) -> float:
+    """Playback speed that brings a slow talker up to an energetic pace for
+    a sales pitch. Never slows anyone down; caps at 1.5x."""
+    if wpm <= 0:
+        return 1.0
+    raw = TARGET_WPM / wpm
+    return min(SPEED_STEPS, key=lambda s: abs(s - raw))
+
+
 def _ts(t: float) -> str:
     h, rem = divmod(t, 3600)
     m, s = divmod(rem, 60)
@@ -268,6 +299,13 @@ def run_pipeline(slug: str, video: Path) -> None:
     words_file = take_dir / "words.json"
     words_file.write_text(json.dumps(tr["words"]), "utf-8")
     api.upload_asset(slug, "words", words_file)
+
+    # speaking pace → default playback speed for viewers
+    wpm = measure_wpm(tr["words"])
+    if wpm:
+        speed = best_speed(wpm)
+        log.info("speaking pace %.0f wpm → default playback %.2gx", wpm, speed)
+        api.set_meta(slug, wpm=round(wpm, 1), default_speed=speed)
     vtt_file = take_dir / "captions.vtt"
     n_cues = write_vtt(tr["segments"], vtt_file)
     api.upload_asset(slug, "vtt", vtt_file)

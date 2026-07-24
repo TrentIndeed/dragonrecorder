@@ -124,9 +124,11 @@
       <div id="railEdits"></div>
     </div>
     <div class="tabpane" id="pane-activity" hidden>
-      <h3>Viewer attention</h3>
+      <div class="statgrid" id="railStats"></div>
+      <h3>Where they watched</h3>
       <canvas id="railDrop" width="290" height="70"></canvas>
-      <h3>Viewers</h3>
+      <p class="hint">Taller = more viewers watched that moment.</p>
+      <h3>Per viewer</h3>
       <div id="railViewers"></div>
     </div>
     <div class="tabpane" id="pane-transcript" hidden></div>
@@ -139,6 +141,7 @@ window.DR = {
   duration: {{ r.duration_s or 0 }},
   hasWords: {{ "true" if r.has_words else "false" }},
   isOwner: {{ "true" if is_owner else "false" }},
+  defaultSpeed: {{ r.default_speed or 1.0 }},
 };
 </script>
 <script src="/static/player.js?v={{ v }}"></script>

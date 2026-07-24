@@ -24,8 +24,19 @@
   // ---- playback ----
   const preplay = $("preplay");
   const controls = $("controls");
-  const speeds = [1, 1.25, 1.5, 1.75, 2];
-  let speedIdx = 0;
+  // AI-chosen default speed (from the speaker's measured WPM) leads the cycle
+  const aiSpeed = window.DR.defaultSpeed || 1.0;
+  const baseSpeeds = [1, 1.25, 1.5, 1.75, 2];
+  const speeds = [...new Set([aiSpeed, ...baseSpeeds])].sort((a, b) => a - b);
+  let speedIdx = speeds.indexOf(aiSpeed);
+  const showSpeed = (x) => {
+    const label = `${(+x.toFixed(2))}×`;
+    $("speedBtn").textContent = label;
+    $("preSpeed").textContent = label;
+  };
+  // apply the AI default before first play
+  video.playbackRate = aiSpeed;
+  showSpeed(aiSpeed);
 
   const setPlayingUI = (playing) => {
     $("icoPlay").hidden = playing;
@@ -50,8 +61,7 @@
   $("speedBtn").addEventListener("click", () => {
     speedIdx = (speedIdx + 1) % speeds.length;
     video.playbackRate = speeds[speedIdx];
-    $("speedBtn").textContent = `${speeds[speedIdx]}×`;
-    $("preSpeed").textContent = `${speeds[speedIdx]}×`;
+    showSpeed(speeds[speedIdx]);
   });
 
   const ccBtn = $("ccBtn");
@@ -165,12 +175,27 @@
   video.addEventListener("seeked", () => { if (!video.paused) rangeStart = video.currentTime; });
   video.addEventListener("ended", closeRange);
 
+  // play-count + time-to-first-play (engagement signal for the owner)
+  let pendingPlays = 0;
+  let firstPlayS = null;
+  const pageOpen = performance.now();
+  video.addEventListener("play", () => {
+    pendingPlays += 1;
+    if (firstPlayS === null) firstPlayS = (performance.now() - pageOpen) / 1000;
+  });
+
   const flush = (beacon = false) => {
     closeRange();
     if (!video.paused) rangeStart = video.currentTime;
-    if (!pending.length || window.DR.isOwner) { pending = []; return; }
-    const payload = JSON.stringify({ ranges: pending });
+    if ((!pending.length && !pendingPlays) || window.DR.isOwner) {
+      pending = []; pendingPlays = 0; return;
+    }
+    const payload = JSON.stringify({
+      ranges: pending, plays: pendingPlays,
+      first_play_s: firstPlayS,
+    });
     pending = [];
+    pendingPlays = 0;
     if (beacon && navigator.sendBeacon) {
       navigator.sendBeacon(`/api/w/${slug}/progress`,
         new Blob([payload], { type: "application/json" }));
@@ -302,21 +327,51 @@
         box.appendChild(row);
       }
 
-      // activity
+      // ---- analytics summary ----
+      const a = d.analytics || {};
+      const dur = d.recording.duration_s;
+      const pct = (x) => Math.round((x || 0) * 100) + "%";
+      const stats = $("railStats");
+      if (stats) {
+        const cells = [
+          ["Viewers", a.unique_viewers ?? 0],
+          ["Played", `${a.played ?? 0}/${a.opened ?? 0}`],
+          ["Avg watched", pct(a.avg_pct)],
+          ["Completed", `${pct(a.completion_rate)}`],
+          ["Watch time", fmt(a.total_watch_s || 0)],
+          ["Speaking", d.recording.wpm ? `${Math.round(d.recording.wpm)} wpm` : "—"],
+        ];
+        stats.innerHTML = cells.map(([k, v]) =>
+          `<div class="stat"><span class="v num">${v}</span>` +
+          `<span class="k">${k}</span></div>`).join("");
+      }
+
+      // ---- per-viewer engagement (watched-segments bar) ----
       const vbox = $("railViewers");
       vbox.textContent = "";
-      const viewers = d.viewers.filter((v) => !v.is_owner);
+      const viewers = d.viewers.filter((v) => !v.is_owner)
+        .sort((x, y) => y.watched_s - x.watched_s);
       if (!viewers.length) {
         vbox.innerHTML = '<p class="empty">No views yet — share the link.</p>';
       }
-      const dur = d.recording.duration_s;
       for (const v of viewers) {
         const row = document.createElement("div");
-        row.className = "vrow";
-        const who = v.label || v.viewer_id.slice(0, 6);
-        const pct = dur ? Math.round((v.max_pos_s / dur) * 100) + "%" : "—";
-        row.innerHTML = `<b></b><span class="num">${fmt(v.watched_s)} · ${pct}</span>`;
+        row.className = "vrow2";
+        const who = v.label || ("viewer " + v.viewer_id.slice(0, 4));
+        const reached = dur ? Math.round((v.max_pos_s / dur) * 100) : 0;
+        let ranges = [];
+        try { ranges = JSON.parse(v.ranges || "[]"); } catch {}
+        const segs = dur ? ranges.map(([s, e]) =>
+          `<span style="left:${(s / dur) * 100}%;width:${((e - s) / dur) * 100}%"></span>`
+        ).join("") : "";
+        row.innerHTML = `
+          <div class="vhead"><b></b>
+            <span class="num vmeta">${fmt(v.watched_s)} · ${reached}%${
+              v.play_count > 1 ? " · " + v.play_count + " plays" : ""}</span>
+          </div>
+          <div class="segbar">${segs}</div>`;
         row.querySelector("b").textContent = who;
+        row.title = "Watched the highlighted parts of the video";
         vbox.appendChild(row);
       }
       const cv = $("railDrop");

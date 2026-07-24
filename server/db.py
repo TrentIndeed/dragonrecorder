@@ -70,9 +70,29 @@ CREATE TABLE IF NOT EXISTS edits (
 """
 
 
+# columns added after v1; applied idempotently at startup
+MIGRATIONS = {
+    "recordings": {
+        "wpm": "REAL",            # measured speaking words-per-minute
+        "default_speed": "REAL",  # AI-chosen playback speed for viewers
+        "plays": "INTEGER NOT NULL DEFAULT 0",  # unused col guard
+    },
+    "views": {
+        "play_count": "INTEGER NOT NULL DEFAULT 0",   # times they pressed play
+        "first_play_s": "REAL",                       # seconds from open to play
+    },
+}
+
+
 def init_db() -> None:
     with connect() as db:
         db.executescript(SCHEMA)
+        for table, cols in MIGRATIONS.items():
+            existing = {r["name"] for r in
+                        db.execute(f"PRAGMA table_info({table})")}
+            for col, decl in cols.items():
+                if col not in existing:
+                    db.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
 
 
 @contextmanager

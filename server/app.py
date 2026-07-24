@@ -147,7 +147,8 @@ async def upload_file(slug: str, request: Request, duration_s: float = 0):
 @app.post("/api/recordings/{slug}/meta", dependencies=[Depends(require_token)])
 async def set_meta(slug: str, request: Request):
     body = await request.json()
-    fields = {k: body[k] for k in ("title", "description", "duration_s", "transcript")
+    fields = {k: body[k] for k in ("title", "description", "duration_s",
+                                   "transcript", "wpm", "default_speed")
               if k in body}
     if not fields:
         return {"ok": True}
@@ -336,18 +337,25 @@ async def progress(slug: str, request: Request,
         return {"ok": False}
     body = await request.json()
     ranges = [r for r in body.get("ranges", []) if e_ok(r)]
+    plays = int(body.get("plays", 0))
+    first_play = body.get("first_play_s")
     with db.connect() as dbc:
-        row = dbc.execute("SELECT ranges FROM views WHERE slug=? AND viewer_id=?",
+        row = dbc.execute("SELECT ranges, play_count, first_play_s FROM views"
+                          " WHERE slug=? AND viewer_id=?",
                           (slug, dr_vid)).fetchone()
         if row is None:
             return {"ok": False}
         merged = merge_ranges(json.loads(row["ranges"]) + ranges)
         watched = sum(e - s for s, e in merged)
         max_pos = max([e for _, e in merged], default=0)
+        fp = row["first_play_s"]
+        if fp is None and first_play is not None:
+            fp = float(first_play)
         dbc.execute(
-            "UPDATE views SET ranges=?, watched_s=?, max_pos_s=?, last_seen=?"
-            " WHERE slug=? AND viewer_id=?",
-            (json.dumps(merged), watched, max_pos, iso(utcnow()), slug, dr_vid),
+            "UPDATE views SET ranges=?, watched_s=?, max_pos_s=?, last_seen=?,"
+            " play_count=play_count+?, first_play_s=? WHERE slug=? AND viewer_id=?",
+            (json.dumps(merged), watched, max_pos, iso(utcnow()),
+             plays, fp, slug, dr_vid),
         )
     return {"ok": True}
 
@@ -507,14 +515,31 @@ def dash_detail(slug: str):
         row = get_recording(dbc, slug)
         viewers = dbc.execute(
             "SELECT viewer_id, label, is_owner, started_at, last_seen, watched_s,"
-            " max_pos_s FROM views WHERE slug=? ORDER BY started_at DESC",
-            (slug,)).fetchall()
+            " max_pos_s, ranges, play_count, first_play_s FROM views"
+            " WHERE slug=? ORDER BY started_at DESC", (slug,)).fetchall()
         edits = dbc.execute("SELECT * FROM edits WHERE slug=?", (slug,)).fetchall()
         comments = dbc.execute(
             "SELECT * FROM comments WHERE slug=? ORDER BY created_at", (slug,)).fetchall()
+    dur = row["duration_s"] or 0
+    real = [v for v in viewers if not v["is_owner"]]
+    watched = [v for v in real if v["watched_s"] > 0]        # actually played
+    completions = [v for v in watched if dur and v["max_pos_s"] >= dur * 0.95]
+    analytics = {
+        "unique_viewers": len({v["viewer_id"] for v in real}),
+        "opened": len(real),                                 # link opened
+        "played": len(watched),                              # pressed play
+        "completions": len(completions),
+        "completion_rate": (len(completions) / len(watched)) if watched else 0,
+        "avg_pct": (sum(min(1, v["max_pos_s"] / dur) for v in watched) / len(watched)
+                    if watched and dur else 0),
+        "total_watch_s": sum(v["watched_s"] for v in real),
+        "avg_watch_s": (sum(v["watched_s"] for v in watched) / len(watched)
+                        if watched else 0),
+    }
     return {
         "recording": dict(row),
         "viewers": [dict(v) for v in viewers],
+        "analytics": analytics,
         "edits": [dict(e) for e in edits],
         "comments": [dict(c) for c in comments],
     }
