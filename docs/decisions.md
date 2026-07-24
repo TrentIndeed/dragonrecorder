@@ -89,3 +89,21 @@ Loom's rewind (back up a few seconds, re-record over the mistake) is real
 functionality but is mid-file splice-and-resume. Deliberately out of scope
 until everything else ships. Trash + restart cover the common case (flubbed
 intro) at a fraction of the complexity.
+
+## Capture exclusion is configurable — remote operation makes it impossible
+
+`WDA_EXCLUDEFROMCAPTURE` hides the toolbar/countdown from recordings — and
+from every other consumer of the capture API, including the remote-desktop
+stream this machine is operated through. An operator viewing the PC via
+remote_pc/Parsec/RDP-alikes literally cannot see excluded windows; they
+render only on the physical monitor. There is no API that excludes a window
+from one capture consumer but not another.
+
+So `CAPTURE_EXCLUDE=0` (client .env) disables exclusion for remote-operated
+machines: the operator sees everything, and the toolbar/countdown appear in
+recordings — exactly Loom's behavior, which turns out to be less a design
+choice than the only option compatible with remote work. Machines used at
+the physical console keep the default and get the cleaner recordings.
+
+This one cost days: every "the panel doesn't show" report was the operator
+looking through a capture stream at a window that was rendering fine.

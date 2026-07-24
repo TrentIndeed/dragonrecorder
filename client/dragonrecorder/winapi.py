@@ -77,6 +77,25 @@ def park(hwnd: int) -> None:
 
 
 gdi32 = ctypes.windll.gdi32
+dwmapi = ctypes.windll.dwmapi
+
+DWMWA_WINDOW_CORNER_PREFERENCE = 33
+DWMWCP_ROUND = 2
+
+
+def dwm_round_corners(hwnd: int) -> None:
+    """Windows 11 native rounded corners: antialiased and shadow-capable,
+    unlike SetWindowRgn which clips hard and leaves white edge artifacts."""
+    if hwnd:
+        pref = ctypes.c_int(DWMWCP_ROUND)
+        dwmapi.DwmSetWindowAttribute(wt.HWND(hwnd),
+                                     DWMWA_WINDOW_CORNER_PREFERENCE,
+                                     ctypes.byref(pref), 4)
+
+
+def clear_region(hwnd: int) -> None:
+    if hwnd:
+        user32.SetWindowRgn(wt.HWND(hwnd), None, True)
 
 
 def set_round_region(hwnd: int, w: int, h: int, radius: int) -> None:

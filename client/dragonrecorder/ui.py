@@ -132,8 +132,8 @@ class Overlays:
             x, y = self._panel_pos()
             self.panel.show()
             self._pin("DR-Panel", x, y, PANEL_W, PANEL_H, self.panel)
-            winapi.set_round_region(self._hwnd("DR-Panel"), PANEL_W, PANEL_H,
-                                    int(18 * S))
+            winapi.clear_region(self._hwnd("DR-Panel"))
+            winapi.dwm_round_corners(self._hwnd("DR-Panel"))
             self._panel_visible = True
             # Loom behavior: opening the capture panel also shows the webcam
             # preview bubble bottom-left, before any recording starts
@@ -175,6 +175,7 @@ class Overlays:
         y = geo["top"] + geo["height"] - TOOLBAR_H - int(48 * S)
         self.toolbar.show()
         self._pin("DR-Toolbar", x, y, TOOLBAR_W, TOOLBAR_H, self.toolbar)
+        winapi.dwm_round_corners(self._hwnd("DR-Toolbar"))
 
     def hide_toolbar(self):
         if self.toolbar:
@@ -258,7 +259,8 @@ class Overlays:
         if shape == "circle":
             winapi.set_ellipse_region(hwnd, w, h)
         else:
-            winapi.set_round_region(hwnd, w, h, int(16 * S))
+            winapi.clear_region(hwnd)
+            winapi.dwm_round_corners(hwnd)
         self._bubble_visible = True
         cam_js = camera.replace("\\", "\\\\").replace("'", "\\'")
         self.bubble.evaluate_js(
@@ -331,8 +333,13 @@ class Overlays:
     def _exclude_later(self, title: str):
         def run():
             hwnd = winapi.find_window(title)
-            if not winapi.exclude_from_capture(hwnd):
-                log.error("capture exclusion FAILED for %s — it would appear "
-                          "in recordings", title)
+            if config.CAPTURE_EXCLUDE:
+                if not winapi.exclude_from_capture(hwnd):
+                    log.error("capture exclusion FAILED for %s — it would "
+                              "appear in recordings", title)
+            else:
+                log.info("CAPTURE_EXCLUDE=0: %s stays visible to capture "
+                         "(remote-stream operation) and will appear in "
+                         "recordings", title)
             winapi.set_toolwindow(hwnd)
         threading.Thread(target=run, daemon=True).start()

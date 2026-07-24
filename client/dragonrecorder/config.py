@@ -16,6 +16,11 @@ load_dotenv(CLIENT_DIR.parent / ".env")
 SERVER_URL = os.environ.get("SERVER_URL", "http://127.0.0.1:8082").rstrip("/")
 CAPTURE_TOKEN = os.environ.get("CAPTURE_TOKEN", "")
 WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "base.en")
+# Exclude toolbar/countdown/panel from screen capture (so they never appear
+# in recordings). MUST be 0 when this machine is operated through a
+# capture-based remote stream (remote_pc, Parsec, etc.) — excluded windows
+# are invisible to the stream too, so the operator can't see them at all.
+CAPTURE_EXCLUDE = os.environ.get("CAPTURE_EXCLUDE", "1") != "0"
 # global hotkeys ('keyboard' library syntax). Defaults avoid browser/editor
 # collisions (ctrl+shift+r is Chrome hard-refresh).
 HOTKEY_RECORD = os.environ.get("HOTKEY_RECORD", "ctrl+alt+c")
