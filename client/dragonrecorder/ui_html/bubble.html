@@ -127,6 +127,7 @@
   }
 
   window.startCamera = async (dshowName, blur) => {
+    if (running) return;   // idempotent: panel-show + record-start both call
     blurOn = blur;
     try {
       const devices = await navigator.mediaDevices.enumerateDevices();

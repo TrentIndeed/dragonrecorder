@@ -37,6 +37,8 @@ class Overlays:
         self.draw_mode = False
         self._draw_hwnd = 0
         self._lock = threading.Lock()
+        # set by App: () -> bool, true while a take is recording/paused
+        self.recording_check = None
 
     # ---- panel (pre-record launcher, Loom-style, top-right) ----
 
@@ -47,8 +49,8 @@ class Overlays:
         self.panel = webview.create_window(
             "DragonRecorder", _url("panel.html"), js_api=js_api,
             x=x, y=y, width=PANEL_W, height=PANEL_H, frameless=True,
-            resizable=False, on_top=True, transparent=True)
-        self._panel_visible = True
+            resizable=False, on_top=True, transparent=True, hidden=True)
+        self._panel_visible = False
         # excluded from capture like the toolbar: if it's open when recording
         # starts (countdown overlap), it must not land in the video
         self._exclude_later("DragonRecorder")
@@ -64,11 +66,19 @@ class Overlays:
             self.panel.move(*self._panel_pos())
             self.panel.show()
             self._panel_visible = True
+            # Loom behavior: opening the capture panel also shows the webcam
+            # preview bubble bottom-left, before any recording starts
+            s = config.load_settings()
+            if s["camera"]:
+                self.show_bubble(s["monitor"], s["camera"], s["blur"])
 
     def hide_panel(self):
         if self.panel:
             self.panel.hide()
             self._panel_visible = False
+            # panel dismissed without recording → drop the preview too
+            if not (self.recording_check and self.recording_check()):
+                self.hide_bubble()
 
     def toggle_panel(self):
         if getattr(self, "_panel_visible", False):

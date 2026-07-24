@@ -6,9 +6,16 @@ once and shown/hidden per take.
 """
 
 import logging
+import os
 import shutil
 import threading
 import time
+
+# Auto-grant camera/mic to our own WebView2 windows (the bubble's
+# getUserMedia): pywebview has no PermissionRequested handler, so the
+# permission prompt can't render in a frameless window and capture fails.
+os.environ.setdefault("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
+                      "--use-fake-ui-for-media-stream")
 
 import keyboard
 import pystray
@@ -56,9 +63,19 @@ class PanelApi:
 
     def save_setup(self, s):
         cur = config.load_settings()
+        old_cam, old_blur = cur["camera"], cur["blur"]
         cur.update({k: s[k] for k in ("monitor", "camera", "mic", "blur")
                     if k in s})
         config.save_settings(cur)
+        # keep the live preview in sync while the panel is open
+        ov = self._app.overlays
+        if getattr(ov, "_panel_visible", False):
+            if cur["camera"] != old_cam:
+                ov.hide_bubble()
+                if cur["camera"]:
+                    ov.show_bubble(cur["monitor"], cur["camera"], cur["blur"])
+            elif cur["blur"] != old_blur and cur["camera"]:
+                ov.set_bubble_blur(cur["blur"])
 
     def start_recording(self):
         self._app.overlays.hide_panel()
@@ -111,6 +128,8 @@ class App:
     def __init__(self):
         self.overlays = ui.Overlays()
         self.session = session.Session(self.overlays, self.notify)
+        self.overlays.recording_check = lambda: self.session.state in (
+            session.State.RECORDING, session.State.PAUSED)
         self.tray: pystray.Icon | None = None
 
     # ---- tray ----

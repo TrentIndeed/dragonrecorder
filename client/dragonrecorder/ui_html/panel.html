@@ -48,6 +48,11 @@
   }
   .row select option { background: var(--row); color: var(--text); }
   .row .chev { margin-left: -14px; pointer-events: none; }
+  .badge {
+    flex: none; font-size: 11.5px; font-weight: 600; padding: 2px 9px;
+    border-radius: 6px; background: #3a3d44; color: #fff;
+  }
+  .badge.off { background: transparent; color: #565a62; border: 1px solid #33363d; }
 
   .start {
     width: 100%; height: 46px; margin: 4px 0 10px; border: none;
@@ -100,11 +105,13 @@
   <label class="row" title="Camera bubble">
     <svg viewBox="0 0 24 24"><path d="M17 10.5V7a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-3.5l4 4v-11l-4 4z"/></svg>
     <select id="camera" aria-label="Camera"></select>
+    <span class="badge off" id="camBadge">Off</span>
     <svg class="chev" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5z"/></svg>
   </label>
   <label class="row" title="Microphone">
     <svg viewBox="0 0 24 24"><path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v5a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z"/></svg>
     <select id="mic" aria-label="Microphone"></select>
+    <span class="badge off" id="micBadge">Off</span>
     <svg class="chev" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5z"/></svg>
   </label>
 
@@ -112,17 +119,17 @@
   <div class="err" id="err"></div>
 
   <div class="bottom">
+    <button id="effects" disabled title="Effects — coming later" style="opacity:.45;cursor:default">
+      <svg viewBox="0 0 24 24"><path d="M12 2a2.5 2.5 0 0 1 2.5 2.5A2.5 2.5 0 0 1 12 7a2.5 2.5 0 0 1-2.5-2.5A2.5 2.5 0 0 1 12 2zm-6.5 4A2 2 0 0 1 7.5 8 2 2 0 0 1 5.5 10 2 2 0 0 1 3.5 8a2 2 0 0 1 2-2zm13 0a2 2 0 0 1 2 2 2 2 0 0 1-2 2 2 2 0 0 1-2-2 2 2 0 0 1 2-2zM12 9.5a6.5 6.5 0 0 1 6.5 6.5v5h-13v-5A6.5 6.5 0 0 1 12 9.5z"/></svg>
+      Effects
+    </button>
     <button id="blur"><span class="dot"></span>
       <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-dasharray="3 3"/></svg>
       Blur
     </button>
-    <button id="dash">
-      <svg viewBox="0 0 24 24"><path d="M3 3h8v8H3V3zm10 0h8v5h-8V3zM3 13h8v8H3v-8zm10-3h8v11h-8V10z"/></svg>
-      Dashboard
-    </button>
-    <button id="hotkeyBtn" title="">
-      <svg viewBox="0 0 24 24"><path d="M4 5h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2zm1 3v2h2V8H5zm4 0v2h2V8H9zm4 0v2h2V8h-2zm4 0v2h2V8h-2zM5 12v2h2v-2H5zm4 0v2h6v-2H9zm8 0v2h2v-2h-2z"/></svg>
-      <span id="hotkeyLabel">Hotkey</span>
+    <button id="more" title="Open your library">
+      <svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>
+      More
     </button>
   </div>
 </div>
@@ -146,9 +153,7 @@
     fill($("camera"), info.cameras, info.settings.camera, "No Camera");
     fill($("mic"), info.mics, info.settings.mic, "No Microphone");
     $("blur").classList.toggle("on", info.settings.blur);
-    $("hotkeyLabel").textContent = info.hotkeys.record
-      .split("+").map(k => k[0].toUpperCase() + k.slice(1)).join("+");
-    $("hotkeyBtn").title = `${$("hotkeyLabel").textContent} opens this panel / stops recording`;
+    updateBadges();
     if (!info.token_ok) {
       $("err").textContent = "CAPTURE_TOKEN / SERVER_URL missing in .env — uploads will fail.";
     }
@@ -163,14 +168,23 @@
       blur: $("blur").classList.contains("on"),
     }), 150);
   }
+  function updateBadges() {
+    const set = (badge, on) => {
+      badge.textContent = on ? "On" : "Off";
+      badge.classList.toggle("off", !on);
+    };
+    set($("camBadge"), !!$("camera").value);
+    set($("micBadge"), !!$("mic").value);
+  }
+
   for (const id of ["monitor", "camera", "mic"])
-    $(id).addEventListener("change", save);
+    $(id).addEventListener("change", () => { updateBadges(); save(); });
 
   $("blur").addEventListener("click", () => {
     $("blur").classList.toggle("on");
     save();
   });
-  $("dash").addEventListener("click", () => pywebview.api.open_dashboard());
+  $("more").addEventListener("click", () => pywebview.api.open_dashboard());
   $("close").addEventListener("click", () => pywebview.api.hide_panel());
   $("start").addEventListener("click", async () => {
     save();

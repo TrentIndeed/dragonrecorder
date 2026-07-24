@@ -560,7 +560,10 @@ async def dash_toggle_edit(slug: str, kind: str, request: Request):
     return {"ok": True}
 
 
-DEFAULT_AUTO_APPLY = {"fillers": True, "silences": True, "captions": False}
+
+# Edits are opt-in: detectors always run and report counts, but nothing is
+# applied unless toggled on the video page (or defaulted on in the sidebar).
+DEFAULT_AUTO_APPLY = {"fillers": False, "silences": False, "captions": False}
 
 
 def get_auto_apply(dbc) -> dict:
@@ -569,9 +572,12 @@ def get_auto_apply(dbc) -> dict:
 
 
 @app.get("/api/settings/auto-apply")
-def read_auto_apply():
-    """Which edit toggles default to on for new recordings. Read by both the
-    dashboard UI and the client (which is why it isn't under /api/dash)."""
+def read_auto_apply(request: Request, authorization: str = Header(default="")):
+    """Which edit toggles default to on for new recordings. Readable by the
+    client (capture token) and the dashboard (session) — not by viewers."""
+    token_ok = config.CAPTURE_TOKEN and authorization == f"Bearer {config.CAPTURE_TOKEN}"
+    if not token_ok and not dash_authed(request):
+        raise HTTPException(401)
     with db.connect() as dbc:
         return get_auto_apply(dbc)
 

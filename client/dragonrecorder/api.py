@@ -95,7 +95,7 @@ def get_auto_apply() -> dict:
             r.raise_for_status()
             return r.json()
     except Exception:
-        return {"fillers": True, "silences": True, "captions": False}
+        return {"fillers": False, "silences": False, "captions": False}
 
 
 def get_render_jobs() -> list[dict]:
