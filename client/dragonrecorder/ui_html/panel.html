@@ -11,12 +11,14 @@
     --mono: "Cascadia Mono", ui-monospace, Consolas, monospace;
   }
   * { box-sizing: border-box; user-select: none; }
-  body { margin: 0; background: transparent; overflow: hidden; }
+  /* opaque: the window itself is clipped to a rounded rect by a win32
+     region, so the page just fills it edge to edge */
+  html, body { margin: 0; height: 100%; background: var(--bg); overflow: hidden; }
   .panel {
-    margin: 6px; background: var(--bg); border: 1px solid var(--line);
-    border-radius: 18px; padding: 12px; color: var(--text);
+    height: 100%; background: var(--bg);
+    border: 1px solid var(--line); border-radius: 18px;
+    padding: 12px; color: var(--text);
     font: 13.5px system-ui, "Segoe UI", sans-serif;
-    box-shadow: 0 10px 34px rgba(0, 0, 0, 0.5);
   }
   .top {
     display: flex; align-items: center; gap: 4px; padding: 0 2px 10px;
@@ -119,9 +121,10 @@
   <div class="err" id="err"></div>
 
   <div class="bottom">
-    <button id="effects" disabled title="Effects — coming later" style="opacity:.45;cursor:default">
-      <svg viewBox="0 0 24 24"><path d="M12 2a2.5 2.5 0 0 1 2.5 2.5A2.5 2.5 0 0 1 12 7a2.5 2.5 0 0 1-2.5-2.5A2.5 2.5 0 0 1 12 2zm-6.5 4A2 2 0 0 1 7.5 8 2 2 0 0 1 5.5 10 2 2 0 0 1 3.5 8a2 2 0 0 1 2-2zm13 0a2 2 0 0 1 2 2 2 2 0 0 1-2 2 2 2 0 0 1-2-2 2 2 0 0 1 2-2zM12 9.5a6.5 6.5 0 0 1 6.5 6.5v5h-13v-5A6.5 6.5 0 0 1 12 9.5z"/></svg>
-      Effects
+    <button id="shape" title="Webcam shape: rounded rectangle / circle">
+      <svg id="shapeRect" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="4"/></svg>
+      <svg id="shapeCircle" viewBox="0 0 24 24" style="display:none"><circle cx="12" cy="12" r="8"/></svg>
+      <span id="shapeLabel">Shape</span>
     </button>
     <button id="blur"><span class="dot"></span>
       <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-dasharray="3 3"/></svg>
@@ -137,6 +140,11 @@
 <script>
   const $ = (id) => document.getElementById(id);
   let saveTimer;
+  let shape = "rect";
+  function renderShape() {
+    $("shapeRect").style.display = shape === "rect" ? "" : "none";
+    $("shapeCircle").style.display = shape === "circle" ? "" : "none";
+  }
 
   async function load() {
     const info = await pywebview.api.get_setup();
@@ -153,6 +161,8 @@
     fill($("camera"), info.cameras, info.settings.camera, "No Camera");
     fill($("mic"), info.mics, info.settings.mic, "No Microphone");
     $("blur").classList.toggle("on", info.settings.blur);
+    shape = info.settings.bubble_shape || "rect";
+    renderShape();
     updateBadges();
     if (!info.token_ok) {
       $("err").textContent = "CAPTURE_TOKEN / SERVER_URL missing in .env — uploads will fail.";
@@ -166,6 +176,7 @@
       camera: $("camera").value,
       mic: $("mic").value,
       blur: $("blur").classList.contains("on"),
+      bubble_shape: shape,
     }), 150);
   }
   function updateBadges() {
@@ -182,6 +193,11 @@
 
   $("blur").addEventListener("click", () => {
     $("blur").classList.toggle("on");
+    save();
+  });
+  $("shape").addEventListener("click", () => {
+    shape = shape === "rect" ? "circle" : "rect";
+    renderShape();
     save();
   });
   $("more").addEventListener("click", () => pywebview.api.open_dashboard());

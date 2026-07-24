@@ -34,6 +34,7 @@ DEFAULT_SETTINGS = {
     "camera": "",          # dshow device name, "" = none
     "mic": "",             # dshow device name, "" = none
     "blur": False,
+    "bubble_shape": "rect",   # "rect" (rounded rectangle) or "circle"
     "fps": 30,
     "bubble_x": None,      # remembered bubble position
     "bubble_y": None,

@@ -33,17 +33,18 @@ def _dpi_scale() -> float:
 
 S = _dpi_scale()
 TOOLBAR_W, TOOLBAR_H = int(460 * S), int(64 * S)
-BUBBLE = int(220 * S)
+BUBBLE = int(220 * S)                       # circle shape (square window)
+BUBBLE_RECT_W, BUBBLE_RECT_H = int(300 * S), int(170 * S)
 COUNTDOWN = int(180 * S)
 PANEL_W, PANEL_H = int(336 * S), int(396 * S)
 PANEL_MARGIN = int(14 * S)
 
 
 def _url(name: str) -> str:
-    # cache-bust: WebView2's persistent profile caches file:// pages, which
-    # can serve stale CSS/JS after the app updates
-    p = config.UI_DIR / name
-    return p.as_uri() + f"?v={int(p.stat().st_mtime)}"
+    # plain file URI — NO query string: pywebview mangles ?v= into the path
+    # and WebView2 then 404s every overlay page ("file not found" white box).
+    # Staleness is handled by --disable-http-cache in the browser args.
+    return (config.UI_DIR / name).as_uri()
 
 
 class Overlays:
@@ -68,10 +69,19 @@ class Overlays:
             self._hwnds[title] = h
         return h
 
-    def _pin(self, title: str, x: int, y: int, w: int, h: int) -> None:
-        """Enforce exact geometry + topmost after showing a window."""
+    def _pin(self, title: str, x: int, y: int, w: int, h: int,
+             window=None) -> None:
+        """Enforce exact geometry + topmost after showing a window. The
+        managed resize jiggle forces WinForms resize events through to the
+        WebView2 controller — without it the composition surface can stay at
+        its 768x768 default and the page never reaches the screen."""
         self._shown.add(title)
-        winapi.force_rect_topmost(self._hwnd(title), x, y, w, h)
+        hwnd = self._hwnd(title)
+        # raw size jiggle: an actual WM_SIZE after WebView2's controller is
+        # up is what makes the WinForms control push its bounds into the
+        # controller (this is why the bubble worked: its show changes size)
+        winapi.force_rect_topmost(hwnd, x, y, w, h - 2)
+        winapi.force_rect_topmost(hwnd, x, y, w, h)
 
     def _hide_soon(self, window, title: str) -> None:
         """transparent=True windows ignore hidden=True at creation — hide
@@ -98,18 +108,18 @@ class Overlays:
 
     def create_panel(self, js_api) -> "webview.Window":
         x, y = self._panel_pos()
-        # note: transparent=True must NOT be combined with background_color —
-        # pywebview/WebView2 wedges during create_window on that combination
+        # Opaque + win32 rounded region: pywebview/WebView2 per-pixel
+        # transparency is unreliable (white boxes, blank windows) — shaped
+        # opaque windows are not.
         self.panel = webview.create_window(
-            "DragonRecorder", _url("panel.html"), js_api=js_api,
+            "DR-Panel", _url("panel.html"), js_api=js_api,
             x=-4000, y=0, width=PANEL_W, height=PANEL_H, frameless=True,
-            resizable=False, on_top=True, transparent=True, hidden=True,
+            resizable=False, on_top=True, background_color="#17181c",
             easy_drag=False)
         self._panel_visible = False
         # excluded from capture like the toolbar: if it's open when recording
         # starts (countdown overlap), it must not land in the video
-        self._exclude_later("DragonRecorder")
-        self._hide_soon(self.panel, "DragonRecorder")
+        self._exclude_later("DR-Panel")
         return self.panel
 
     def _panel_pos(self) -> tuple[int, int]:
@@ -121,7 +131,9 @@ class Overlays:
         if self.panel:
             x, y = self._panel_pos()
             self.panel.show()
-            self._pin("DragonRecorder", x, y, PANEL_W, PANEL_H)
+            self._pin("DR-Panel", x, y, PANEL_W, PANEL_H, self.panel)
+            winapi.set_round_region(self._hwnd("DR-Panel"), PANEL_W, PANEL_H,
+                                    int(18 * S))
             self._panel_visible = True
             # Loom behavior: opening the capture panel also shows the webcam
             # preview bubble bottom-left, before any recording starts
@@ -131,8 +143,7 @@ class Overlays:
 
     def hide_panel(self):
         if self.panel:
-            self.panel.hide()
-            winapi.hide_window(self._hwnd("DragonRecorder"))
+            winapi.park(self._hwnd("DR-Panel"))
             self._panel_visible = False
             # panel dismissed without recording → drop the preview too
             if not (self.recording_check and self.recording_check()):
@@ -157,14 +168,13 @@ class Overlays:
                 on_top=True, resizable=False, hidden=True, focus=False,
                 easy_drag=False, background_color="#101114")
             self._exclude_later("DR-Toolbar")
-            self._hide_soon(self.toolbar, "DR-Toolbar")
 
     def show_toolbar(self, monitor: int):
         geo = devices.monitor_geometry(monitor)
         x = geo["left"] + (geo["width"] - TOOLBAR_W) // 2
         y = geo["top"] + geo["height"] - TOOLBAR_H - int(48 * S)
         self.toolbar.show()
-        self._pin("DR-Toolbar", x, y, TOOLBAR_W, TOOLBAR_H)
+        self._pin("DR-Toolbar", x, y, TOOLBAR_W, TOOLBAR_H, self.toolbar)
 
     def hide_toolbar(self):
         if self.toolbar:
@@ -181,10 +191,9 @@ class Overlays:
                 "DR-Countdown", _url("countdown.html"),
                 x=-4000, y=0,
                 width=COUNTDOWN, height=COUNTDOWN, frameless=True,
-                on_top=True, resizable=False, hidden=True, focus=False,
-                easy_drag=False, transparent=True)
+                on_top=True, resizable=False, focus=False,
+                easy_drag=False, background_color="#0d0e11")
             self._exclude_later("DR-Countdown")
-            self._hide_soon(self.countdown, "DR-Countdown")
 
     def show_countdown(self, monitor: int, seconds: int):
         self.ensure_countdown()
@@ -193,7 +202,9 @@ class Overlays:
         y = geo["top"] + (geo["height"] - COUNTDOWN) // 2
         self.set_countdown(seconds)
         self.countdown.show()
-        self._pin("DR-Countdown", x, y, COUNTDOWN, COUNTDOWN)
+        self._pin("DR-Countdown", x, y, COUNTDOWN, COUNTDOWN, self.countdown)
+        winapi.set_ellipse_region(self._hwnd("DR-Countdown"), COUNTDOWN,
+                                  COUNTDOWN)
 
     def set_countdown(self, n: int):
         if self.countdown:
@@ -201,8 +212,7 @@ class Overlays:
 
     def hide_countdown(self):
         if self.countdown:
-            self.countdown.hide()
-            winapi.hide_window(self._hwnd("DR-Countdown"))
+            winapi.park(self._hwnd("DR-Countdown"))
 
     # ---- webcam bubble (captured on purpose) ----
 
@@ -214,27 +224,41 @@ class Overlays:
                 "DR-Bubble", _url("bubble.html"),
                 x=-4000, y=0,
                 width=BUBBLE, height=BUBBLE, frameless=True, on_top=True,
-                resizable=False, hidden=True, focus=False, transparent=True,
+                resizable=False, focus=False, background_color="#0e0f12",
                 easy_drag=True)
 
             def moved(*_):
+                if self.bubble.x <= -3000:   # parked off-screen, not a drag
+                    return
                 s = config.load_settings()
                 s["bubble_x"] = self.bubble.x
                 s["bubble_y"] = self.bubble.y
                 config.save_settings(s)
             self.bubble.events.moved += moved
-            self._hide_soon(self.bubble, "DR-Bubble")
 
     def show_bubble(self, monitor: int, camera: str, blur: bool):
         self.ensure_bubble()
         s = config.load_settings()
+        shape = s.get("bubble_shape", "rect")
+        if shape == "circle":
+            w = h = BUBBLE
+            css_w = css_h = 220
+        else:
+            w, h = BUBBLE_RECT_W, BUBBLE_RECT_H
+            css_w, css_h = 300, 170
         geo = devices.monitor_geometry(monitor)
         m = int(32 * S)
         x = s["bubble_x"] if s["bubble_x"] is not None else geo["left"] + m
         y = (s["bubble_y"] if s["bubble_y"] is not None
-             else geo["top"] + geo["height"] - BUBBLE - m)
+             else geo["top"] + geo["height"] - h - m)
+        self.bubble.evaluate_js(f"setShape({css_w}, {css_h})")
         self.bubble.show()
-        self._pin("DR-Bubble", x, y, BUBBLE, BUBBLE)
+        self._pin("DR-Bubble", x, y, w, h, self.bubble)
+        hwnd = self._hwnd("DR-Bubble")
+        if shape == "circle":
+            winapi.set_ellipse_region(hwnd, w, h)
+        else:
+            winapi.set_round_region(hwnd, w, h, int(16 * S))
         self._bubble_visible = True
         cam_js = camera.replace("\\", "\\\\").replace("'", "\\'")
         self.bubble.evaluate_js(
@@ -259,8 +283,7 @@ class Overlays:
     def hide_bubble(self):
         if self.bubble:
             self.bubble.evaluate_js("stopCamera()")
-            self.bubble.hide()
-            winapi.hide_window(self._hwnd("DR-Bubble"))
+            winapi.park(self._hwnd("DR-Bubble"))
             self._bubble_visible = False
 
     # ---- drawing overlay (captured on purpose) ----

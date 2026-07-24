@@ -3,25 +3,19 @@
 <head>
 <meta charset="utf-8">
 <style>
+  /* Opaque page — the WINDOW is clipped to shape by a win32 region, so no
+     transparency games. The bubble is a real window captured from screen;
+     dragging it mid-recording moves it in the video, which is the point. */
   * { user-select: none; }
-  /* everything transparent so only the circle is captured — no white box.
-     WebView2 shows its own white page background until this applies. */
-  html, body { margin: 0; background: transparent !important; overflow: hidden; }
-  /* The bubble is a real window captured from screen — dragging it
-     mid-recording moves it in the video, which is the point. */
+  html, body { margin: 0; height: 100%; background: #0e0f12; overflow: hidden; }
   .wrap {
-    width: 212px; height: 212px; margin: 4px; border-radius: 50%;
-    overflow: hidden; position: relative; background: #101114;
-    /* subtle dark ring + soft shadow reads on any background without a
-       bright white edge */
-    box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.55), 0 6px 20px rgba(0, 0, 0, 0.4);
-    cursor: grab;
+    width: 100%; height: 100%; position: relative; overflow: hidden;
+    cursor: grab; background: #0e0f12;
+    /* soft inner edge so the shape reads on any background */
+    box-shadow: inset 0 0 0 2px rgba(0, 0, 0, 0.5);
   }
-  canvas, video {
-    position: absolute; top: 50%; left: 50%;
-    transform: translate(-50%, -50%);
-    min-width: 100%; min-height: 100%;
-  }
+  canvas { display: block; width: 100%; height: 100%; }
+  video { display: none; }
   .err {
     position: absolute; inset: 0; display: none; align-items: center;
     justify-content: center; text-align: center; color: #9aa0a8;
@@ -31,7 +25,7 @@
 </head>
 <body>
 <div class="wrap pywebview-drag-region">
-  <video id="cam" autoplay muted playsinline style="display:none"></video>
+  <video id="cam" autoplay muted playsinline></video>
   <canvas id="out" class="pywebview-drag-region"></canvas>
   <div class="err" id="err">Camera unavailable</div>
 </div>
@@ -43,19 +37,26 @@
   const video = document.getElementById("cam");
   const out = document.getElementById("out");
   const ctx = out.getContext("2d");
-  const SIZE = 212;
-  out.width = out.height = SIZE;
+  let CW = 300, CH = 170;          // canvas size, set by setShape
 
   let stream = null, segmenter = null, blurOn = false, running = false;
   let loadingSegmenter = null;
 
-  const blurCanvas = new OffscreenCanvas(SIZE, SIZE);
+  const blurCanvas = new OffscreenCanvas(CW, CH);
   const blurCtx = blurCanvas.getContext("2d");
-  const personCanvas = new OffscreenCanvas(SIZE, SIZE);
+  const personCanvas = new OffscreenCanvas(CW, CH);
   const personCtx = personCanvas.getContext("2d");
-  const maskCanvas = new OffscreenCanvas(SIZE, SIZE);
+  const maskCanvas = new OffscreenCanvas(64, 64);
   const maskCtx = maskCanvas.getContext("2d");
   let maskImageData = null;
+
+  window.setShape = (w, h) => {
+    CW = w; CH = h;
+    out.width = CW; out.height = CH;
+    blurCanvas.width = personCanvas.width = CW;
+    blurCanvas.height = personCanvas.height = CH;
+  };
+  setShape(300, 170);
 
   async function loadSegmenter() {
     if (segmenter) return segmenter;
@@ -80,12 +81,13 @@
     return loadingSegmenter;
   }
 
-  // square center-crop draw of the video frame
+  // cover-crop the video frame to the canvas aspect
   function drawFrame(c) {
     const vw = video.videoWidth, vh = video.videoHeight;
     if (!vw) return;
-    const s = Math.min(vw, vh);
-    c.drawImage(video, (vw - s) / 2, (vh - s) / 2, s, s, 0, 0, SIZE, SIZE);
+    const scale = Math.max(CW / vw, CH / vh);
+    const sw = CW / scale, sh = CH / scale;
+    c.drawImage(video, (vw - sw) / 2, (vh - sh) / 2, sw, sh, 0, 0, CW, CH);
   }
 
   function drawBlurred(result) {
@@ -108,7 +110,7 @@
     maskCtx.putImageData(maskImageData, 0, 0);
     personCtx.globalCompositeOperation = "destination-in";
     personCtx.filter = "blur(3px)";
-    personCtx.drawImage(maskCanvas, 0, 0, SIZE, SIZE);
+    personCtx.drawImage(maskCanvas, 0, 0, CW, CH);
     personCtx.filter = "none";
     personCtx.globalCompositeOperation = "source-over";
 
@@ -163,7 +165,7 @@
     running = false;
     if (stream) stream.getTracks().forEach((t) => t.stop());
     stream = null;
-    ctx.clearRect(0, 0, SIZE, SIZE);
+    ctx.clearRect(0, 0, CW, CH);
   };
 </script>
 <script>

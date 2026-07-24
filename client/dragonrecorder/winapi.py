@@ -62,6 +62,38 @@ SWP_NOACTIVATE = 0x0010
 SWP_SHOWWINDOW = 0x0040
 
 
+
+SWP_NOSIZE = 0x0001
+
+
+def park(hwnd: int) -> None:
+    """Move a window far off-screen instead of hiding it. Transparent
+    pywebview windows must never be SW_HIDE'd or created hidden — that skips
+    the show/hide hack pywebview needs to activate transparency, leaving a
+    white background."""
+    if hwnd:
+        user32.SetWindowPos(wt.HWND(hwnd), wt.HWND(HWND_TOPMOST), -4000, 0,
+                            0, 0, SWP_NOSIZE | SWP_NOACTIVATE)
+
+
+gdi32 = ctypes.windll.gdi32
+
+
+def set_round_region(hwnd: int, w: int, h: int, radius: int) -> None:
+    """Clip a window to a rounded rectangle at the OS level. Shaped opaque
+    windows replace per-pixel transparency, which pywebview/WebView2 cannot
+    do reliably (white box artifacts)."""
+    if hwnd:
+        rgn = gdi32.CreateRoundRectRgn(0, 0, w + 1, h + 1, radius * 2, radius * 2)
+        user32.SetWindowRgn(wt.HWND(hwnd), rgn, True)
+
+
+def set_ellipse_region(hwnd: int, w: int, h: int) -> None:
+    if hwnd:
+        rgn = gdi32.CreateEllipticRgn(0, 0, w + 1, h + 1)
+        user32.SetWindowRgn(wt.HWND(hwnd), rgn, True)
+
+
 def hide_window(hwnd: int) -> None:
     """SW_HIDE directly — pywebview's hidden=True and .hide() are both
     unreliable for transparent windows."""

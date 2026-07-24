@@ -38,10 +38,11 @@ if (-not (Test-Path "$root\.venv\Scripts\python.exe")) {
 }
 & "$root\.venv\Scripts\python.exe" -m pip install -q -r "$root\client\requirements.txt"
 
-# python.exe attached to this console (-NoNewWindow) so Ctrl+C reaches it
-$proc = Start-Process -FilePath "$root\.venv\Scripts\python.exe" `
+# pythonw = no console window; Ctrl+C still works because the finally below
+# kills by PID, not by console signal
+$proc = Start-Process -FilePath "$root\.venv\Scripts\pythonw.exe" `
     -ArgumentList "-m", "dragonrecorder" -WorkingDirectory "$root\client" `
-    -NoNewWindow -PassThru
+    -PassThru
 
 $dashUrl = ""
 try {

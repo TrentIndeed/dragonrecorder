@@ -21,7 +21,7 @@ if [ -n "$status" ]; then
         taskkill //PID "$oldpid" //T //F >/dev/null 2>&1 || true
     else
         # older instance without /status: kill by command line
-        powershell -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object { \$_.CommandLine -like '*dragonrecorder*' -and \$_.Name -match '^python' } | ForEach-Object { & taskkill /PID \$_.ProcessId /T /F }" >/dev/null 2>&1 || true
+        powershell -NoProfile -WindowStyle Hidden -Command "Get-CimInstance Win32_Process | Where-Object { \$_.CommandLine -like '*dragonrecorder*' -and \$_.Name -match '^python' } | ForEach-Object { & taskkill /PID \$_.ProcessId /T /F }" >/dev/null 2>&1 || true
     fi
     sleep 1
 fi
@@ -33,8 +33,9 @@ fi
 "$root/.venv/Scripts/python.exe" -m pip install -q -r "$root/client/requirements.txt"
 
 cd "$root/client"
-# python.exe (not pythonw) so this stays attached to the terminal
-"$root/.venv/Scripts/python.exe" -m dragonrecorder &
+# pythonw = no console window pops up; Ctrl+C still works because the trap
+# below kills by PID, not by console signal
+"$root/.venv/Scripts/pythonw.exe" -m dragonrecorder &
 app_pid=$!
 # taskkill needs the Windows PID, not Git Bash's MSYS PID ($!). The winpid
 # file isn't populated instantly, so retry briefly.
