@@ -46,11 +46,10 @@ if (-not (Test-Path "$root\.venv\Scripts\python.exe")) {
 }
 & "$root\.venv\Scripts\python.exe" -m pip install -q -r "$root\client\requirements.txt"
 
-# pythonw = no console window; Ctrl+C still works because the finally below
-# kills by PID, not by console signal
-$proc = Start-Process -FilePath "$root\.venv\Scripts\pythonw.exe" `
+# console python attached to this window; output captured for diagnosis
+$proc = Start-Process -FilePath "$root\.venv\Scripts\python.exe" `
     -ArgumentList "-m", "dragonrecorder" -WorkingDirectory "$root\client" `
-    -PassThru
+    -NoNewWindow -RedirectStandardError "$root\launcher.log" -PassThru
 
 $dashUrl = ""
 try {
@@ -61,8 +60,14 @@ Write-Host "DragonRecorder is running (Ctrl+C here to quit everything)."
 Write-Host "  Record hotkey: Ctrl+Alt+C (opens the panel)"
 if ($dashUrl) { Write-Host "  Library:       $dashUrl/dash" }
 
+$startTs = Get-Date
 try {
     Wait-Process -Id $proc.Id
+    if (((Get-Date) - $startTs).TotalSeconds -lt 15) {
+        Write-Host ""
+        Write-Host "DragonRecorder exited immediately. Log tail:"
+        Get-Content "$root\launcher.log" -Tail 25 -ErrorAction SilentlyContinue
+    }
 } finally {
     # Ctrl+C, window close, or app exit -> force-kill the whole tree so no
     # ffmpeg/webview child is left behind

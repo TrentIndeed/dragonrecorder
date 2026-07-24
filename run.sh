@@ -38,9 +38,10 @@ fi
 "$root/.venv/Scripts/python.exe" -m pip install -q -r "$root/client/requirements.txt"
 
 cd "$root/client"
-# pythonw = no console window pops up; Ctrl+C still works because the trap
-# below kills by PID, not by console signal
-"$root/.venv/Scripts/pythonw.exe" -m dragonrecorder &
+# console python (inherits this terminal, no new window); output captured to
+# launcher.log so an instant death is diagnosable
+: > "$root/launcher.log"
+"$root/.venv/Scripts/python.exe" -m dragonrecorder >> "$root/launcher.log" 2>&1 &
 app_pid=$!
 # taskkill needs the Windows PID, not Git Bash's MSYS PID ($!). The winpid
 # file isn't populated instantly, so retry briefly.
@@ -64,5 +65,13 @@ dash_url="$(sed -n 's/^SERVER_URL=//p' "$root/.env" 2>/dev/null | tr -d '\r' | h
 echo "DragonRecorder is running (Ctrl+C here to quit everything)."
 echo "  Record hotkey: Ctrl+Alt+C (opens the panel)"
 [ -n "$dash_url" ] && echo "  Library:       $dash_url/dash"
+start_ts=$(date +%s)
 wait "$app_pid"
-echo "DragonRecorder exited."
+rc=$?
+if [ $(( $(date +%s) - start_ts )) -lt 15 ]; then
+    echo ""
+    echo "DragonRecorder exited immediately (code $rc). Log tail:"
+    tail -25 "$root/launcher.log" 2>/dev/null || echo "(no log)"
+else
+    echo "DragonRecorder exited."
+fi

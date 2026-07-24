@@ -37,3 +37,4 @@ models/
 Thumbs.db
 .DS_Store
 *.log
+launcher.log
