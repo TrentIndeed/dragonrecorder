@@ -45,3 +45,40 @@ def list_dshow_devices() -> dict:
         if m:
             (cameras if m.group(2) == "video" else mics).append(m.group(1))
     return {"cameras": cameras, "mics": mics}
+
+
+def default_mic(mics: list[str]) -> str | None:
+    """The Windows default capture device, matched against the dshow list.
+    Follows whatever the user sets in Windows Sound settings."""
+    try:
+        import comtypes
+        from pycaw.constants import CLSID_MMDeviceEnumerator
+        from pycaw.pycaw import (AudioUtilities, EDataFlow, ERole,
+                                 IMMDeviceEnumerator)
+        enum = comtypes.CoCreateInstance(CLSID_MMDeviceEnumerator,
+                                         IMMDeviceEnumerator,
+                                         comtypes.CLSCTX_INPROC_SERVER)
+        dev = enum.GetDefaultAudioEndpoint(EDataFlow.eCapture.value,
+                                           ERole.eConsole.value)
+        name = AudioUtilities.CreateDevice(dev).FriendlyName or ""
+    except Exception:
+        return None
+    if name in mics:
+        return name
+    for m in mics:                      # fuzzy: endpoint vs dshow naming
+        if name and (name in m or m in name):
+            return m
+    return None
+
+
+def pick_default_mic(mics: list[str]) -> str:
+    """OS default > 'Microphone'-named device > first."""
+    if not mics:
+        return ""
+    best = default_mic(mics)
+    if best:
+        return best
+    for m in mics:
+        if "microphone" in m.lower():
+            return m
+    return mics[0]

@@ -42,6 +42,7 @@ DEFAULT_SETTINGS = {
     "monitor": 1,          # mss 1-based index
     "camera": "",          # dshow device name, "" = none
     "mic": "",             # dshow device name, "" = none
+    "mic_auto": True,      # True: follow the Windows default device
     "blur": False,
     "bubble_shape": "rect",   # "rect" (rounded rectangle) or "circle"
     "fps": 30,

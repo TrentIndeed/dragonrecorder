@@ -35,14 +35,6 @@ logging.basicConfig(
 )
 log = logging.getLogger("dr.main")
 
-def _best_mic(mics: list) -> str:
-    """Prefer an actual microphone over line-ins when auto-picking."""
-    for m in mics:
-        if "microphone" in m.lower():
-            return m
-    return mics[0]
-
-
 HOTKEY_RECORD = config.HOTKEY_RECORD
 HOTKEY_DRAW = config.HOTKEY_DRAW
 LOCAL_KEEP_DAYS = 14
@@ -61,9 +53,11 @@ class PanelApi:
         except Exception:
             log.exception("dshow enumeration failed")
             dshow = {"cameras": [], "mics": []}
-        # auto-pick a microphone when none is set (or the saved one is gone)
-        if dshow["mics"] and settings["mic"] not in dshow["mics"]:
-            settings["mic"] = _best_mic(dshow["mics"])
+        # follow the Windows default device while the pick is automatic
+        if dshow["mics"] and (settings.get("mic_auto", True)
+                              or settings["mic"] not in dshow["mics"]):
+            settings["mic"] = devices.pick_default_mic(dshow["mics"])
+            settings["mic_auto"] = True
             config.save_settings(settings)
         return {
             "monitors": devices.list_monitors(),
@@ -79,8 +73,12 @@ class PanelApi:
         old_cam, old_blur = cur["camera"], cur["blur"]
         old_mon = cur["monitor"]
         old_shape = cur.get("bubble_shape", "rect")
+        old_mic = cur["mic"]
         cur.update({k: s[k] for k in ("monitor", "camera", "mic", "blur",
                                       "bubble_shape") if k in s})
+        if "mic" in s and s["mic"] != old_mic:
+            # an explicit pick in the card stops the follow-the-default logic
+            cur["mic_auto"] = False
         if cur["monitor"] != old_mon:
             # forget the dragged position: it belongs to the old monitor
             cur["bubble_x"] = cur["bubble_y"] = None
@@ -265,10 +263,12 @@ class App:
             try:
                 dshow = devices.list_dshow_devices()
                 s = config.load_settings()
-                if dshow["mics"] and s["mic"] not in dshow["mics"]:
-                    s["mic"] = _best_mic(dshow["mics"])
+                if dshow["mics"] and (s.get("mic_auto", True)
+                                      or s["mic"] not in dshow["mics"]):
+                    s["mic"] = devices.pick_default_mic(dshow["mics"])
+                    s["mic_auto"] = True
                     config.save_settings(s)
-                    log.info("auto-selected microphone: %s", s["mic"])
+                    log.info("mic follows Windows default: %s", s["mic"])
             except Exception:
                 log.exception("mic auto-pick failed")
         threading.Thread(target=auto_mic, daemon=True).start()

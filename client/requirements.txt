@@ -8,3 +8,5 @@ pyperclip>=1.8
 python-dotenv>=1.0
 faster-whisper>=1.0
 numpy
+pycaw>=20240210
+comtypes>=1.2
