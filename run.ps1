@@ -31,6 +31,14 @@ try {
         Start-Sleep 1
     } catch {}
 }
+# wait until the old bridge is confirmed dead, or the new instance's own
+# already-running guard sees the dying socket and quits immediately
+for ($i = 0; $i -lt 12; $i++) {
+    try {
+        Invoke-WebRequest -Uri "http://127.0.0.1:8477/ping" -UseBasicParsing -TimeoutSec 1 | Out-Null
+        Start-Sleep -Milliseconds 500
+    } catch { break }
+}
 
 if (-not (Test-Path "$root\.venv\Scripts\python.exe")) {
     Write-Host "First run: creating virtualenv..."

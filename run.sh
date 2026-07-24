@@ -23,7 +23,12 @@ if [ -n "$status" ]; then
         # older instance without /status: kill by command line
         powershell -NoProfile -WindowStyle Hidden -Command "Get-CimInstance Win32_Process | Where-Object { \$_.CommandLine -like '*dragonrecorder*' -and \$_.Name -match '^python' } | ForEach-Object { & taskkill /PID \$_.ProcessId /T /F }" >/dev/null 2>&1 || true
     fi
-    sleep 1
+    # wait until the old bridge is confirmed dead, or the NEW instance's own
+    # already-running guard sees the dying socket and quits immediately
+    for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do
+        curl -s -m 1 http://127.0.0.1:8477/ping >/dev/null 2>&1 || break
+        sleep 0.5
+    done
 fi
 
 if [ ! -f "$root/.venv/Scripts/python.exe" ]; then
@@ -60,3 +65,4 @@ echo "DragonRecorder is running (Ctrl+C here to quit everything)."
 echo "  Record hotkey: Ctrl+Alt+C (opens the panel)"
 [ -n "$dash_url" ] && echo "  Library:       $dash_url/dash"
 wait "$app_pid"
+echo "DragonRecorder exited."
