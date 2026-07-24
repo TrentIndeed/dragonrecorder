@@ -26,7 +26,11 @@ CAPTURE_EXCLUDE = os.environ.get("CAPTURE_EXCLUDE", "1") != "0"
 HOTKEY_RECORD = os.environ.get("HOTKEY_RECORD", "ctrl+alt+c")
 HOTKEY_DRAW = os.environ.get("HOTKEY_DRAW", "ctrl+alt+d")
 
-APPDATA_DIR = Path(os.environ.get("APPDATA", Path.home())) / "DragonRecorder"
+# App data lives inside the repo, NOT under %APPDATA%: Microsoft Store
+# Python silently virtualizes AppData writes into its package container
+# (Packages/PythonSoftwareFoundation.../LocalCache), where no other process
+# can find them — settings "didn't persist" and logs "didn't exist".
+APPDATA_DIR = Path(os.environ.get("DR_DATA_DIR", CLIENT_DIR.parent / ".appdata"))
 APPDATA_DIR.mkdir(parents=True, exist_ok=True)
 RECORDINGS_DIR = APPDATA_DIR / "recordings"
 RECORDINGS_DIR.mkdir(exist_ok=True)

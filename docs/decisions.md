@@ -100,9 +100,10 @@ render only on the physical monitor. There is no API that excludes a window
 from one capture consumer but not another.
 
 So `CAPTURE_EXCLUDE=0` (client .env) disables exclusion for remote-operated
-machines: the operator sees everything, and the toolbar/countdown appear in
+machines: the operator sees everything, and the toolbar appears in
 recordings — exactly Loom's behavior, which turns out to be less a design
-choice than the only option compatible with remote work. Machines used at
+choice than the only option compatible with remote work. (The countdown
+never appears either way: it finishes before ffmpeg starts capturing.) Machines used at
 the physical console keep the default and get the cleaner recordings.
 
 This one cost days: every "the panel doesn't show" report was the operator

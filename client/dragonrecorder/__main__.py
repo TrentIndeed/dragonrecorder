@@ -35,6 +35,14 @@ logging.basicConfig(
 )
 log = logging.getLogger("dr.main")
 
+def _best_mic(mics: list) -> str:
+    """Prefer an actual microphone over line-ins when auto-picking."""
+    for m in mics:
+        if "microphone" in m.lower():
+            return m
+    return mics[0]
+
+
 HOTKEY_RECORD = config.HOTKEY_RECORD
 HOTKEY_DRAW = config.HOTKEY_DRAW
 LOCAL_KEEP_DAYS = 14
@@ -53,6 +61,10 @@ class PanelApi:
         except Exception:
             log.exception("dshow enumeration failed")
             dshow = {"cameras": [], "mics": []}
+        # auto-pick a microphone when none is set (or the saved one is gone)
+        if dshow["mics"] and settings["mic"] not in dshow["mics"]:
+            settings["mic"] = _best_mic(dshow["mics"])
+            config.save_settings(settings)
         return {
             "monitors": devices.list_monitors(),
             "cameras": dshow["cameras"],
@@ -65,13 +77,21 @@ class PanelApi:
     def save_setup(self, s):
         cur = config.load_settings()
         old_cam, old_blur = cur["camera"], cur["blur"]
+        old_mon = cur["monitor"]
         old_shape = cur.get("bubble_shape", "rect")
         cur.update({k: s[k] for k in ("monitor", "camera", "mic", "blur",
                                       "bubble_shape") if k in s})
+        if cur["monitor"] != old_mon:
+            # forget the dragged position: it belongs to the old monitor
+            cur["bubble_x"] = cur["bubble_y"] = None
         config.save_settings(cur)
         # keep the live preview in sync while the panel is open
         ov = self._app.overlays
         if getattr(ov, "_panel_visible", False):
+            if cur["monitor"] != old_mon:
+                # card + webcam follow the chosen screen
+                ov.show_panel()
+                return
             shape_changed = cur.get("bubble_shape", "rect") != old_shape
             if cur["camera"] != old_cam or shape_changed:
                 ov.hide_bubble()
@@ -241,6 +261,17 @@ class App:
         keyboard.add_hotkey(
             HOTKEY_DRAW,
             lambda: self.overlays.toggle_draw(config.load_settings()["monitor"]))
+        def auto_mic():
+            try:
+                dshow = devices.list_dshow_devices()
+                s = config.load_settings()
+                if dshow["mics"] and s["mic"] not in dshow["mics"]:
+                    s["mic"] = _best_mic(dshow["mics"])
+                    config.save_settings(s)
+                    log.info("auto-selected microphone: %s", s["mic"])
+            except Exception:
+                log.exception("mic auto-pick failed")
+        threading.Thread(target=auto_mic, daemon=True).start()
         threading.Thread(target=self.run_tray, daemon=True).start()
         threading.Thread(target=self.render_job_loop, daemon=True).start()
         threading.Thread(target=self.cleanup_old_takes, daemon=True).start()

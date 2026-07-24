@@ -33,8 +33,8 @@ def _dpi_scale() -> float:
 
 S = _dpi_scale()
 TOOLBAR_W, TOOLBAR_H = int(460 * S), int(64 * S)
-BUBBLE = int(220 * S)                       # circle shape (square window)
-BUBBLE_RECT_W, BUBBLE_RECT_H = int(300 * S), int(170 * S)
+BUBBLE = int(275 * S)                       # circle shape (square window)
+BUBBLE_RECT_W, BUBBLE_RECT_H = int(375 * S), int(211 * S)   # 16:9 fallback
 COUNTDOWN = int(180 * S)
 PANEL_W, PANEL_H = int(336 * S), int(396 * S)
 PANEL_MARGIN = int(14 * S)
@@ -243,10 +243,10 @@ class Overlays:
         shape = s.get("bubble_shape", "rect")
         if shape == "circle":
             w = h = BUBBLE
-            css_w = css_h = 220
+            css_w = css_h = 275
         else:
             w, h = BUBBLE_RECT_W, BUBBLE_RECT_H
-            css_w, css_h = 300, 170
+            css_w, css_h = 375, 211
         geo = devices.monitor_geometry(monitor)
         m = int(32 * S)
         x = s["bubble_x"] if s["bubble_x"] is not None else geo["left"] + m
