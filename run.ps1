@@ -4,6 +4,13 @@
 $ErrorActionPreference = "Stop"
 $root = $PSScriptRoot
 
+# already running? just open its panel and be done
+try {
+    Invoke-WebRequest -Uri "http://127.0.0.1:8477/open" -Method POST -UseBasicParsing -TimeoutSec 2 | Out-Null
+    Write-Host "DragonRecorder is already running - opened its panel (top-right)."
+    exit 0
+} catch {}
+
 if (-not (Test-Path "$root\.venv\Scripts\python.exe")) {
     Write-Host "First run: creating virtualenv..."
     python -m venv "$root\.venv"
