@@ -215,6 +215,10 @@ class App:
         bridge.start(self.overlays.show_panel)
 
     def main(self):
+        from . import bridge
+        if bridge.poke_existing():
+            log.info("already running — opened the existing panel instead")
+            return
         self.overlays.create_panel(PanelApi(self))
         webview.start(self.on_started, gui="edgechromium", debug=False,
                       private_mode=False)
