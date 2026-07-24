@@ -108,8 +108,10 @@ def set_round_region(hwnd: int, w: int, h: int, radius: int) -> None:
 
 
 def set_ellipse_region(hwnd: int, w: int, h: int) -> None:
+    """Clip 1px inside the window so the region edge never exposes unpainted
+    (white) surface pixels at the rim."""
     if hwnd:
-        rgn = gdi32.CreateEllipticRgn(0, 0, w + 1, h + 1)
+        rgn = gdi32.CreateEllipticRgn(1, 1, w, h)
         user32.SetWindowRgn(wt.HWND(hwnd), rgn, True)
 
 

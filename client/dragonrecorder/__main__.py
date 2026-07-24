@@ -68,6 +68,28 @@ class PanelApi:
             "hotkeys": {"record": HOTKEY_RECORD, "draw": HOTKEY_DRAW},
         }
 
+    def get_previews(self):
+        """Downscaled screenshots of every monitor for the screen picker."""
+        import base64
+        import io
+
+        import mss
+        previews = {}
+        try:
+            with mss.mss() as sct:
+                for i, mon in enumerate(sct.monitors[1:], start=1):
+                    shot = sct.grab(mon)
+                    img = Image.frombytes("RGB", shot.size, shot.bgra,
+                                          "raw", "BGRX")
+                    img.thumbnail((300, 300))
+                    buf = io.BytesIO()
+                    img.save(buf, "JPEG", quality=55)
+                    previews[str(i)] = ("data:image/jpeg;base64,"
+                                        + base64.b64encode(buf.getvalue()).decode())
+        except Exception:
+            log.exception("monitor previews failed")
+        return previews
+
     def save_setup(self, s):
         cur = config.load_settings()
         old_cam, old_blur = cur["camera"], cur["blur"]

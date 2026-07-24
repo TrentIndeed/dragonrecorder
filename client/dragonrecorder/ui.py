@@ -36,7 +36,7 @@ TOOLBAR_W, TOOLBAR_H = int(460 * S), int(64 * S)
 BUBBLE = int(275 * S)                       # circle shape (square window)
 BUBBLE_RECT_W, BUBBLE_RECT_H = int(375 * S), int(211 * S)   # 16:9 fallback
 COUNTDOWN = int(180 * S)
-PANEL_W, PANEL_H = int(336 * S), int(396 * S)
+PANEL_W, PANEL_H = int(336 * S), int(548 * S)
 PANEL_MARGIN = int(14 * S)
 
 
@@ -134,6 +134,10 @@ class Overlays:
             self._pin("DR-Panel", x, y, PANEL_W, PANEL_H, self.panel)
             winapi.clear_region(self._hwnd("DR-Panel"))
             winapi.dwm_round_corners(self._hwnd("DR-Panel"))
+            try:   # refresh screen previews each time the card opens
+                self.panel.evaluate_js("window.onPanelShown && onPanelShown()")
+            except Exception:
+                pass
             self._panel_visible = True
             # Loom behavior: opening the capture panel also shows the webcam
             # preview bubble bottom-left, before any recording starts

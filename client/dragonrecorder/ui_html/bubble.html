@@ -55,8 +55,12 @@
     out.width = CW; out.height = CH;
     blurCanvas.width = personCanvas.width = CW;
     blurCanvas.height = personCanvas.height = CH;
+    // circle: also round the page content so the region edge cuts through
+    // dark pixels, never unpainted white
+    const wrap = document.querySelector(".wrap");
+    wrap.style.borderRadius = (w === h) ? "50%" : "0";
   };
-  setShape(300, 170);
+  setShape(375, 211);
 
   async function loadSegmenter() {
     if (segmenter) return segmenter;

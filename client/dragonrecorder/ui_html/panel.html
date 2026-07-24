@@ -35,6 +35,11 @@
   .top .close { color: var(--muted); }
   .top .close:hover { color: var(--text); background: var(--row); }
   .top svg { width: 18px; height: 18px; fill: currentColor; }
+  .brandmark {
+    display: flex; align-items: center; gap: 8px; color: var(--text);
+    font: 600 13px system-ui; padding-left: 2px;
+  }
+  .brandmark svg { fill: var(--text); }
 
   .row {
     display: flex; align-items: center; gap: 10px; background: var(--row);
@@ -55,6 +60,35 @@
     border-radius: 6px; background: #3a3d44; color: #fff;
   }
   .badge.off { background: transparent; color: #565a62; border: 1px solid #33363d; }
+
+  .screenrow { cursor: pointer; }
+  .screenlabel {
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .screenpreview {
+    position: relative; margin: 0 0 8px; border-radius: 11px;
+    overflow: hidden; background: #101114; height: 148px;
+  }
+  .screenpreview img {
+    width: 100%; height: 100%; object-fit: cover; display: block;
+  }
+  .screenlist {
+    position: absolute; inset: 0; background: rgba(14, 15, 18, 0.97);
+    display: flex; gap: 8px; padding: 8px; overflow-x: auto;
+    align-items: center;
+  }
+  .screenopt {
+    flex: 1; min-width: 92px; border: 2px solid var(--line);
+    border-radius: 9px; overflow: hidden; cursor: pointer; background: none;
+    padding: 0; position: relative;
+  }
+  .screenopt img { width: 100%; height: 76px; object-fit: cover; display: block; }
+  .screenopt .lab {
+    display: block; font-size: 11px; color: var(--muted); padding: 3px 0 4px;
+    text-align: center;
+  }
+  .screenopt.sel { border-color: var(--ai); }
+  .screenopt.sel .lab { color: var(--ai); }
 
   .start {
     width: 100%; height: 46px; margin: 4px 0 10px; border: none;
@@ -84,26 +118,25 @@
 <body>
 <div class="panel">
   <div class="top pywebview-drag-region">
-    <button class="mode active" title="Screen + camera">
-      <svg viewBox="0 0 24 24"><path d="M3 5h18a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1h-7v2h3v2H7v-2h3v-2H3a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"/></svg>
-    </button>
-    <button class="mode" disabled title="Camera only — later">
-      <svg viewBox="0 0 24 24"><path d="M17 10.5V7a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-3.5l4 4v-11l-4 4z"/></svg>
-    </button>
-    <button class="mode" disabled title="Screenshot — later">
-      <svg viewBox="0 0 24 24"><path d="M9 3l-1.5 2H4a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-3.5L15 3H9zm3 5a4.5 4.5 0 1 1 0 9 4.5 4.5 0 0 1 0-9z"/></svg>
-    </button>
+    <div class="brandmark" title="DragonRecorder">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2.2"/><circle cx="12" cy="12" r="3.6" fill="#ff4b33"/></svg>
+      <span>DragonRecorder</span>
+    </div>
     <div class="spacer"></div>
     <button class="mode close" id="close" title="Quit DragonRecorder">
       <svg viewBox="0 0 24 24"><path d="M6.4 5 5 6.4 10.6 12 5 17.6 6.4 19 12 13.4 17.6 19l1.4-1.4L13.4 12 19 6.4 17.6 5 12 10.6z"/></svg>
     </button>
   </div>
 
-  <label class="row" title="Screen to record">
+  <div class="row screenrow" id="screenRow" title="Screen to record">
     <svg viewBox="0 0 24 24"><path d="M3 5h18a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1h-7v2h3v2H7v-2h3v-2H3a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"/></svg>
-    <select id="monitor" aria-label="Screen"></select>
-    <svg class="chev" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5z"/></svg>
-  </label>
+    <span class="screenlabel" id="screenLabel">Screen 1</span>
+    <svg class="chev" viewBox="0 0 24 24" style="margin-left:auto"><path d="M7 10l5 5 5-5z"/></svg>
+  </div>
+  <div class="screenpreview" id="screenPreview">
+    <img id="previewImg" alt="Selected screen preview" draggable="false">
+    <div class="screenlist" id="screenList" hidden></div>
+  </div>
   <label class="row" title="Camera bubble">
     <svg viewBox="0 0 24 24"><path d="M17 10.5V7a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-3.5l4 4v-11l-4 4z"/></svg>
     <select id="camera" aria-label="Camera"></select>
@@ -146,6 +179,44 @@
     $("shapeCircle").style.display = shape === "circle" ? "" : "none";
   }
 
+  let mons = [];
+  let monIdx = 1;
+  let previews = {};
+
+  function monLabel(m) {
+    return `Screen ${m.index} — ${m.width}×${m.height}${m.primary ? " (primary)" : ""}`;
+  }
+
+  function renderScreens() {
+    const cur = mons.find(m => m.index === monIdx) || mons[0];
+    if (cur) $("screenLabel").textContent = monLabel(cur);
+    $("previewImg").src = previews[String(monIdx)] || "";
+    const list = $("screenList");
+    list.innerHTML = "";
+    for (const m of mons) {
+      const b = document.createElement("button");
+      b.className = "screenopt" + (m.index === monIdx ? " sel" : "");
+      b.innerHTML = `<img draggable="false"><span class="lab">Screen ${m.index}</span>`;
+      b.querySelector("img").src = previews[String(m.index)] || "";
+      b.addEventListener("click", (e) => {
+        e.stopPropagation();
+        monIdx = m.index;
+        list.hidden = true;
+        renderScreens();
+        save();     // moves the card + webcam to that screen
+      });
+      list.appendChild(b);
+    }
+  }
+
+  async function refreshPreviews() {
+    try {
+      previews = await pywebview.api.get_previews();
+      renderScreens();
+    } catch (e) {}
+  }
+  window.onPanelShown = () => refreshPreviews();
+
   async function load() {
     const info = await pywebview.api.get_setup();
     const fill = (sel, items, value, noneLabel) => {
@@ -155,9 +226,15 @@
       sel.value = value;
       if (sel.selectedIndex === -1) sel.selectedIndex = 0;
     };
-    fill($("monitor"),
-      info.monitors.map(m => ({label: `Screen ${m.index} — ${m.width}×${m.height}${m.primary ? " (primary)" : ""}`, value: m.index})),
-      String(info.settings.monitor));
+    mons = info.monitors;
+    monIdx = parseInt(info.settings.monitor, 10) || 1;
+    renderScreens();
+    refreshPreviews();
+    $("screenRow").addEventListener("click", () => {
+      const list = $("screenList");
+      list.hidden = !list.hidden;
+      if (!list.hidden) refreshPreviews();
+    });
     fill($("camera"), info.cameras, info.settings.camera, "No Camera");
     fill($("mic"), info.mics, info.settings.mic, "No Microphone");
     $("blur").classList.toggle("on", info.settings.blur);
@@ -172,7 +249,7 @@
   function save() {
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => pywebview.api.save_setup({
-      monitor: parseInt($("monitor").value, 10),
+      monitor: monIdx,
       camera: $("camera").value,
       mic: $("mic").value,
       blur: $("blur").classList.contains("on"),
@@ -188,7 +265,7 @@
     set($("micBadge"), !!$("mic").value);
   }
 
-  for (const id of ["monitor", "camera", "mic"])
+  for (const id of ["camera", "mic"])
     $(id).addEventListener("change", () => { updateBadges(); save(); });
 
   $("blur").addEventListener("click", () => {
