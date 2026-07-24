@@ -57,6 +57,29 @@ def set_click_through(hwnd: int, enabled: bool) -> None:
     user32.SetWindowLongW(wt.HWND(hwnd), GWL_EXSTYLE, style)
 
 
+HWND_TOPMOST = -1
+SWP_NOACTIVATE = 0x0010
+SWP_SHOWWINDOW = 0x0040
+
+
+def hide_window(hwnd: int) -> None:
+    """SW_HIDE directly — pywebview's hidden=True and .hide() are both
+    unreliable for transparent windows."""
+    if hwnd:
+        user32.ShowWindow(wt.HWND(hwnd), 0)
+
+
+def force_rect_topmost(hwnd: int, x: int, y: int, w: int, h: int) -> None:
+    """Pin a window to an exact rect and keep it topmost. pywebview's
+    frameless windows come out smaller than requested (it subtracts standard
+    window decorations that frameless windows don't have) and can lose their
+    topmost bit across hide/show — this fixes both in one call."""
+    if not hwnd:
+        return
+    user32.SetWindowPos(wt.HWND(hwnd), wt.HWND(HWND_TOPMOST), x, y, w, h,
+                        SWP_NOACTIVATE | SWP_SHOWWINDOW)
+
+
 def set_toolwindow(hwnd: int) -> None:
     """Keep overlay windows out of the taskbar and alt-tab."""
     if not hwnd:

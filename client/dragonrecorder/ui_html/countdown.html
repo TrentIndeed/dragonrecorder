@@ -13,13 +13,34 @@
   .n {
     font: 700 84px "Cascadia Mono", ui-monospace, Consolas, monospace;
     font-variant-numeric: tabular-nums; color: #e8e9eb;
+    display: inline-block;
   }
+  .n.tick { animation: pop 0.9s ease-out; }
+  @keyframes pop {
+    0% { transform: scale(1.35); opacity: 0.2; }
+    30% { transform: scale(1); opacity: 1; }
+    100% { transform: scale(1); opacity: 1; }
+  }
+  @media (prefers-reduced-motion: reduce) { .n.tick { animation: none; } }
 </style>
 </head>
 <body>
   <div class="ring"><span class="n" id="n">3</span></div>
   <script>
-    function setCount(n) { document.getElementById("n").textContent = n; }
+    function setCount(n) {
+      const el = document.getElementById("n");
+      el.textContent = n;
+      el.classList.remove("tick");
+      void el.offsetWidth;   // restart the animation
+      el.classList.add("tick");
+    }
   </script>
+<script>
+  // page zoom persists in the WebView2 profile and breaks fixed layouts
+  addEventListener("wheel", (e) => { if (e.ctrlKey) e.preventDefault(); }, { passive: false });
+  addEventListener("keydown", (e) => {
+    if (e.ctrlKey && ["=", "-", "+", "0"].includes(e.key)) e.preventDefault();
+  });
+</script>
 </body>
 </html>

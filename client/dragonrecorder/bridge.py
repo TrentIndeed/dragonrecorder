@@ -33,8 +33,9 @@ def poke_existing() -> bool:
         return False
 
 
-def start(open_panel) -> None:
-    """Start the listener in a daemon thread. open_panel: zero-arg callable."""
+def start(open_panel, close_panel=None) -> None:
+    """Start the listener in a daemon thread. open_panel/close_panel:
+    zero-arg callables."""
 
     class Handler(BaseHTTPRequestHandler):
         def _cors_ok(self) -> bool:
@@ -72,6 +73,12 @@ def start(open_panel) -> None:
                 except Exception:
                     log.exception("open_panel failed")
                     return self._respond(500, {"error": "panel failed"})
+                return self._respond(200, {"ok": True})
+            if self.path == "/close" and close_panel:
+                try:
+                    close_panel()
+                except Exception:
+                    log.exception("close_panel failed")
                 return self._respond(200, {"ok": True})
             self._respond(404, {"error": "unknown"})
 

@@ -141,5 +141,12 @@
     $("blur").classList.toggle("active", on);
   };
 </script>
+<script>
+  // page zoom persists in the WebView2 profile and breaks fixed layouts
+  addEventListener("wheel", (e) => { if (e.ctrlKey) e.preventDefault(); }, { passive: false });
+  addEventListener("keydown", (e) => {
+    if (e.ctrlKey && ["=", "-", "+", "0"].includes(e.key)) e.preventDefault();
+  });
+</script>
 </body>
 </html>

@@ -5,7 +5,7 @@
 <style>
   body { margin: 0; background: transparent; overflow: hidden; cursor: crosshair; }
   body.inactive { cursor: default; }
-  canvas { display: block; }
+  canvas { display: block; width: 100vw; height: 100vh; }
 </style>
 </head>
 <body>
@@ -67,6 +67,13 @@
     requestAnimationFrame(render);
   }
   render();
+</script>
+<script>
+  // page zoom persists in the WebView2 profile and breaks fixed layouts
+  addEventListener("wheel", (e) => { if (e.ctrlKey) e.preventDefault(); }, { passive: false });
+  addEventListener("keydown", (e) => {
+    if (e.ctrlKey && ["=", "-", "+", "0"].includes(e.key)) e.preventDefault();
+  });
 </script>
 </body>
 </html>
