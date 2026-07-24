@@ -84,6 +84,11 @@ class PanelApi:
     def hide_panel(self):
         self._app.overlays.hide_panel()
 
+    def quit_app(self):
+        # the card's X closes the whole app (tray, bridge, processing) —
+        # in a thread so the JS call returns before windows are destroyed
+        threading.Thread(target=self._app.quit, daemon=True).start()
+
     def open_dashboard(self):
         import webbrowser
         webbrowser.open(f"{config.SERVER_URL}/dash")
@@ -174,16 +179,23 @@ class App:
             time.sleep(0.5)
 
     def quit(self):
+        # graceful stop so a take in progress still gets its link/upload
         if self.session.state in (session.State.RECORDING, session.State.PAUSED):
             self.session.stop()
-            time.sleep(1)
+            time.sleep(1.5)
         if self.tray:
-            self.tray.stop()
+            try:
+                self.tray.stop()
+            except Exception:
+                pass
         for w in list(webview.windows):
             try:
                 w.destroy()
             except Exception:
                 pass
+        # hard exit: guarantees the bridge, any whisper transcription, and
+        # orphaned ffmpeg render children all stop when the card is closed
+        os._exit(0)
 
     # ---- background workers ----
 

@@ -4,13 +4,17 @@
 <meta charset="utf-8">
 <style>
   * { user-select: none; }
-  body { margin: 0; background: transparent; overflow: hidden; }
+  /* everything transparent so only the circle is captured — no white box.
+     WebView2 shows its own white page background until this applies. */
+  html, body { margin: 0; background: transparent !important; overflow: hidden; }
   /* The bubble is a real window captured from screen — dragging it
      mid-recording moves it in the video, which is the point. */
   .wrap {
     width: 212px; height: 212px; margin: 4px; border-radius: 50%;
     overflow: hidden; position: relative; background: #101114;
-    border: 2px solid rgba(255, 255, 255, 0.35);
+    /* subtle dark ring + soft shadow reads on any background without a
+       bright white edge */
+    box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.55), 0 6px 20px rgba(0, 0, 0, 0.4);
     cursor: grab;
   }
   canvas, video {

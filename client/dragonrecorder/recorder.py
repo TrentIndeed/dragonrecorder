@@ -104,6 +104,9 @@ class Recorder:
     # -- lifecycle -----------------------------------------------------------
 
     def start_segment(self) -> None:
+        # ensure the take dir exists at the moment ffmpeg needs it (a stale
+        # cleanup thread or AV could have removed it since __init__)
+        self.take_dir.mkdir(parents=True, exist_ok=True)
         out = self.take_dir / f"seg{len(self.segments):02d}.mp4"
         cmd = self._cmd(out)
         log.info("ffmpeg: %s", " ".join(cmd))
