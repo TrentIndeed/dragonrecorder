@@ -243,7 +243,9 @@ class App:
         threading.Thread(target=self.cleanup_old_takes, daemon=True).start()
         # web dashboard "Record a video" button → open the launcher panel
         from . import bridge
-        bridge.start(self.overlays.show_panel, self.overlays.hide_panel)
+        bridge.start(self.overlays.show_panel, self.overlays.hide_panel,
+                     lambda: {"state": self.session.state.name,
+                              "pid": os.getpid()})
 
     def main(self):
         from . import bridge

@@ -40,7 +40,10 @@ PANEL_MARGIN = int(14 * S)
 
 
 def _url(name: str) -> str:
-    return (config.UI_DIR / name).as_uri()
+    # cache-bust: WebView2's persistent profile caches file:// pages, which
+    # can serve stale CSS/JS after the app updates
+    p = config.UI_DIR / name
+    return p.as_uri() + f"?v={int(p.stat().st_mtime)}"
 
 
 class Overlays:
