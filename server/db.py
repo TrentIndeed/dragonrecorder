@@ -76,6 +76,7 @@ MIGRATIONS = {
         "wpm": "REAL",            # measured speaking words-per-minute
         "default_speed": "REAL",  # AI-chosen playback speed for viewers
         "plays": "INTEGER NOT NULL DEFAULT 0",  # unused col guard
+        "chapters": "TEXT",       # AI chapters: [{"t": sec, "title": str}]
     },
     "views": {
         "play_count": "INTEGER NOT NULL DEFAULT 0",   # times they pressed play

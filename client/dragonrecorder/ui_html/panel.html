@@ -98,6 +98,21 @@
   .campreview video {
     width: 100%; height: 100%; object-fit: contain; display: block;
   }
+  #micWave { flex: none; width: 52px; height: 22px; }
+  .lastlink {
+    display: flex; align-items: center; gap: 8px; margin: 2px 0 8px;
+    padding: 8px 10px; background: var(--row); border-radius: 10px;
+    font-size: 12px; color: var(--muted);
+  }
+  .lastlink .ok { color: #55c07a; font-weight: 700; }
+  .lastlink .url {
+    flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; color: var(--text);
+  }
+  .lastlink button {
+    flex: none; background: var(--row-hi); border: none; color: var(--text);
+    border-radius: 7px; padding: 4px 10px; font-size: 11.5px; cursor: pointer;
+  }
 
   .start {
     width: 100%; height: 46px; margin: 4px 0 10px; border: none;
@@ -158,11 +173,18 @@
   <label class="row" title="Microphone">
     <svg viewBox="0 0 24 24"><path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v5a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z"/></svg>
     <select id="mic" aria-label="Microphone"></select>
+    <canvas id="micWave" width="52" height="22"></canvas>
     <span class="badge off" id="micBadge">Off</span>
     <svg class="chev" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5z"/></svg>
   </label>
 
   <button class="start" id="start">Start Recording</button>
+  <div class="lastlink" id="lastLink" hidden>
+    <span class="ok">✓</span>
+    <span>Link copied</span>
+    <span class="url" id="lastUrl"></span>
+    <button id="lastCopy">Copy</button>
+  </div>
   <div class="err" id="err"></div>
 
   <div class="bottom">
@@ -227,7 +249,7 @@
       renderScreens();
     } catch (e) {}
   }
-  window.onPanelShown = () => { refreshPreviews(); updateCamPreview(); };
+  window.onPanelShown = () => { refreshPreviews(); updateCamPreview(); startMicMeter(); };
 
   async function load() {
     const info = await pywebview.api.get_setup();
@@ -250,6 +272,7 @@
     fill($("camera"), info.cameras, info.settings.camera, "No Camera");
     fill($("mic"), info.mics, info.settings.mic, "No Microphone");
     updateCamPreview();
+    startMicMeter();
     $("blur").classList.toggle("on", info.settings.blur);
     shape = info.settings.bubble_shape || "rect";
     renderShape();
@@ -315,8 +338,59 @@
   window.onPanelHidden = () => {
     if (camStream) { camStream.getTracks().forEach(t => t.stop()); camStream = null; }
     $("camPreview").hidden = true;
+    stopMicMeter();
   };
   $("camera").addEventListener("change", updateCamPreview);
+
+  // live mic level meter in the mic row (Loom-style)
+  let micStream = null, audioCtx = null, meterRaf = 0;
+  function stopMicMeter() {
+    cancelAnimationFrame(meterRaf);
+    if (micStream) { micStream.getTracks().forEach(t => t.stop()); micStream = null; }
+    if (audioCtx) { audioCtx.close().catch(() => {}); audioCtx = null; }
+    const c = $("micWave").getContext("2d");
+    c.clearRect(0, 0, 52, 22);
+  }
+  async function startMicMeter() {
+    stopMicMeter();
+    const name = $("mic").value;
+    if (!name) return;
+    try {
+      const devs = await navigator.mediaDevices.enumerateDevices();
+      const match = devs.find(d => d.kind === "audioinput" && d.label === name);
+      const ac = { };
+      if (match) ac.deviceId = { exact: match.deviceId };
+      micStream = await navigator.mediaDevices.getUserMedia({ audio: ac });
+      audioCtx = new AudioContext();
+      const src = audioCtx.createMediaStreamSource(micStream);
+      const an = audioCtx.createAnalyser();
+      an.fftSize = 64;
+      src.connect(an);
+      const data = new Uint8Array(an.frequencyBinCount);
+      const ctx = $("micWave").getContext("2d");
+      const BARS = 13;
+      const draw = () => {
+        an.getByteFrequencyData(data);
+        ctx.clearRect(0, 0, 52, 22);
+        for (let i = 0; i < BARS; i++) {
+          const v = data[Math.floor(i * data.length / BARS)] / 255;
+          const h = Math.max(2, v * 20);
+          ctx.fillStyle = v > 0.02 ? "#55c07a" : "#3a3d44";
+          ctx.fillRect(i * 4, 11 - h / 2, 3, h);
+        }
+        meterRaf = requestAnimationFrame(draw);
+      };
+      draw();
+    } catch (e) {}
+  }
+  $("mic").addEventListener("change", startMicMeter);
+
+  // after each recording the app reports the copied link here
+  window.setLastLink = (url) => {
+    $("lastUrl").textContent = url.replace(/^https?:\/\//, "");
+    $("lastLink").hidden = false;
+    $("lastCopy").onclick = () => navigator.clipboard.writeText(url);
+  };
   $("start").addEventListener("click", async () => {
     save();
     await new Promise(r => setTimeout(r, 200));

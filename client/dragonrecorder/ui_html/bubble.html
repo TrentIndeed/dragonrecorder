@@ -60,7 +60,7 @@
     const wrap = document.querySelector(".wrap");
     wrap.style.borderRadius = (w === h) ? "50%" : "0";
   };
-  setShape(375, 211);
+  setShape(488, 274);
 
   async function loadSegmenter() {
     if (segmenter) return segmenter;
@@ -143,8 +143,8 @@
       const devices = await navigator.mediaDevices.enumerateDevices();
       const match = devices.find(
         (d) => d.kind === "videoinput" && d.label === dshowName);
-      const vc = { width: { ideal: 1280 }, height: { ideal: 720 },
-                   aspectRatio: { ideal: 16 / 9 } };
+      // max the camera can do, at ITS native aspect (no forcing)
+      const vc = { width: { ideal: 3840 }, height: { ideal: 2160 } };
       if (match) vc.deviceId = { exact: match.deviceId };
       stream = await navigator.mediaDevices.getUserMedia({
         video: vc, audio: false,

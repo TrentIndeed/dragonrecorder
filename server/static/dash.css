@@ -66,13 +66,13 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
-  background: var(--live);
+  background: var(--accent);
   border: none;
   color: #fff;
   font-weight: 600;
   padding: 10px;
 }
-.recordbtn:hover { background: var(--live); filter: brightness(1.08); }
+.recordbtn:hover { background: var(--accent); filter: brightness(1.08); }
 
 .main { flex: 1; padding: 24px 32px 80px; min-width: 0; }
 .mhead {

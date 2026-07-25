@@ -121,8 +121,7 @@
         toast("Recording deleted");
         load();
       });
-      card.addEventListener("click", () =>
-        (location.href = `/w/${r.slug}?autoplay=1&cc=1`));
+      card.addEventListener("click", () => (location.href = `/w/${r.slug}`));
       grid.appendChild(card);
     }
   };

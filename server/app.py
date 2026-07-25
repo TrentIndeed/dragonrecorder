@@ -148,7 +148,8 @@ async def upload_file(slug: str, request: Request, duration_s: float = 0):
 async def set_meta(slug: str, request: Request):
     body = await request.json()
     fields = {k: body[k] for k in ("title", "description", "duration_s",
-                                   "transcript", "wpm", "default_speed")
+                                   "transcript", "wpm", "default_speed",
+                                   "chapters")
               if k in body}
     if not fields:
         return {"ok": True}
@@ -557,6 +558,26 @@ async def dash_update(slug: str, request: Request):
             dbc.execute("UPDATE recordings SET description=? WHERE slug=?",
                         (str(body["description"])[:5000], slug))
     return {"ok": True}
+
+
+@app.post("/api/dash/recordings/{slug}/slug", dependencies=[Depends(require_dash)])
+async def dash_rename_slug(slug: str, request: Request):
+    """Edit link: give a recording a custom vanity slug."""
+    import re as _re
+    body = await request.json()
+    new = str(body.get("slug", "")).strip()
+    if not _re.fullmatch(r"[A-Za-z0-9_-]{3,60}", new):
+        raise HTTPException(400, "use 3-60 letters, digits, - or _")
+    with db.connect() as dbc:
+        get_recording(dbc, slug)
+        if dbc.execute("SELECT 1 FROM recordings WHERE slug=?", (new,)).fetchone():
+            raise HTTPException(409, "that link is already taken")
+        for t in ("recordings", "views", "comments", "reactions", "edits"):
+            dbc.execute(f"UPDATE {t} SET slug=? WHERE slug=?", (new, slug))
+    old_dir, new_dir = slug_dir(slug), slug_dir(new)
+    if old_dir.exists():
+        old_dir.rename(new_dir)
+    return {"ok": True, "slug": new}
 
 
 @app.delete("/api/dash/recordings/{slug}", dependencies=[Depends(require_dash)])

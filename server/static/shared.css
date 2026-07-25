@@ -1,21 +1,24 @@
-/* DragonRecorder tokens — dark on both surfaces.
-   Two reserved accents: --live (red) = recording state ONLY (never on hosted
-   pages), --ai (violet) = machine-generated content. Everything else neutral. */
+/* DragonRecorder web tokens — light, Loom-like: white surfaces, blue accent.
+   Reserved colors: --live (red) = recording/live only, --accent (blue) =
+   actions and links. The local recorder UI stays dark; this is the web. */
 :root {
-  --bg: #101114;
-  --surface: #191b1f;
-  --surface-2: #22252b;
-  --line: #2e3138;
-  --text: #e8e9eb;
-  --muted: #9aa0a8;
-  --faint: #6a7078;
-  --ai: #a78bfa;
-  --ai-dim: #7c6bbf;
-  --live: #ff4545;
-  --ok: #7dd490;
-  --mono: "Cascadia Mono", ui-monospace, Consolas, monospace;
-  --sans: "Roboto", "YouTube Sans", "Segoe UI", system-ui, Arial, sans-serif;
-  --radius: 10px;
+  --bg: #f7f8fb;
+  --surface: #ffffff;
+  --surface-2: #f1f3f7;
+  --line: #e3e6ec;
+  --text: #17181c;
+  --muted: #5c6470;
+  --faint: #98a0ac;
+  --accent: #2c6bff;
+  --accent-dim: #dbe6ff;
+  --ai: #2c6bff;
+  --ai-dim: #dbe6ff;
+  --live: #e5484d;
+  --ok: #2f9e63;
+  --mono: "Roboto Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --sans: "Roboto", "Segoe UI", system-ui, Arial, sans-serif;
+  --radius: 12px;
+  --shadow: 0 1px 2px rgba(16, 24, 40, 0.05), 0 1px 3px rgba(16, 24, 40, 0.08);
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
@@ -23,28 +26,36 @@ body {
   background: var(--bg);
   color: var(--text);
   font-family: var(--sans);
-  font-size: 15px;
-  line-height: 1.5;
+  font-size: 14px;
+  line-height: 1.55;
   -webkit-font-smoothing: antialiased;
 }
 .mono, time, .num {
   font-family: var(--mono);
   font-variant-numeric: tabular-nums;
 }
-a { color: var(--text); }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
 button {
   font: inherit;
   color: var(--text);
-  background: var(--surface-2);
+  background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 8px;
-  padding: 6px 12px;
+  padding: 6px 14px;
   cursor: pointer;
+  box-shadow: var(--shadow);
 }
-button:hover { background: var(--line); }
+button:hover { background: var(--surface-2); }
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+button.primary:hover { filter: brightness(1.06); background: var(--accent); }
 button:focus-visible, a:focus-visible, input:focus-visible,
 textarea:focus-visible, [tabindex]:focus-visible {
-  outline: 2px solid var(--ai);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 input, textarea {
@@ -53,7 +64,7 @@ input, textarea {
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 8px;
-  padding: 8px 10px;
+  padding: 8px 12px;
 }
 .pill {
   display: inline-flex;
@@ -63,11 +74,13 @@ input, textarea {
   border: 1px solid var(--line);
   border-radius: 999px;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 12.5px;
+  background: var(--surface);
 }
 .ai-badge {
-  color: var(--ai);
-  border-color: var(--ai-dim);
+  color: var(--accent);
+  border-color: var(--accent-dim);
+  background: var(--accent-dim);
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }

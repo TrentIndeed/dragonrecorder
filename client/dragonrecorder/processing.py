@@ -255,6 +255,61 @@ def ai_title(transcript: str) -> dict | None:
     return None
 
 
+def ai_chapters(segments: list[dict], duration: float) -> list | None:
+    """Chapter list from the timed transcript, via the claude CLI."""
+    claude = _find_claude()
+    if not claude or len(segments) < 4 or duration < 60:
+        return None
+    lines = "\n".join(f"[{int(s['start'] // 60)}:{int(s['start'] % 60):02d}] "
+                      f"{s['text']}" for s in segments)
+    prompt = (
+        "Stdin is a timestamped transcript of a screen recording. Split it "
+        "into 3-8 chapters. Reply with ONLY a JSON array like "
+        '[{"t": 0, "title": "Intro"}, ...] where t is the chapter start in '
+        "seconds (integer, first chapter t=0) and title is at most 5 words, "
+        "sentence case.")
+    try:
+        r = subprocess.run(
+            [*claude, "-p", prompt, "--output-format", "json",
+             "--max-turns", "1"],
+            input=lines[:8000],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            creationflags=CREATE_NO_WINDOW, timeout=120, cwd=str(Path.home()))
+        if r.returncode != 0:
+            return None
+        candidates = [r.stdout]
+        try:
+            payload = json.loads(r.stdout)
+            if isinstance(payload, dict):
+                candidates.append(str(payload.get("result", "")))
+            elif (isinstance(payload, list) and payload
+                  and isinstance(payload[0], dict) and "t" in payload[0]):
+                candidates.insert(0, r.stdout)
+            elif isinstance(payload, list):
+                for p in payload:
+                    if isinstance(p, dict) and p.get("type") == "result":
+                        candidates.append(str(p.get("result", "")))
+        except ValueError:
+            pass
+        for text in candidates:
+            m = re.search(r"\[\s*\{.*?\}\s*\]", text, re.DOTALL)
+            if not m:
+                continue
+            try:
+                chapters = json.loads(m.group(0))
+            except ValueError:
+                continue
+            clean = [{"t": max(0, int(c["t"])), "title": str(c["title"])[:60]}
+                     for c in chapters
+                     if isinstance(c, dict) and "t" in c and c.get("title")]
+            if 2 <= len(clean) <= 12:
+                clean.sort(key=lambda c: c["t"])
+                return clean
+    except Exception as exc:
+        log.warning("ai_chapters failed: %s", exc)
+    return None
+
+
 def heuristic_title(transcript: str) -> str:
     words = transcript.strip().split()
     if not words:
@@ -318,7 +373,10 @@ def run_pipeline(slug: str, video: Path) -> None:
     else:
         api.set_meta(slug, title=heuristic_title(tr["text"]), title_is_ai=False)
 
-    # 3. thumbnail
+    # 3. chapters + thumbnail
+    chapters = ai_chapters(tr["segments"], duration)
+    if chapters:
+        api.set_meta(slug, chapters=json.dumps(chapters))
     thumb = make_thumbnail(video, duration)
     if thumb:
         api.upload_asset(slug, "thumb", thumb)

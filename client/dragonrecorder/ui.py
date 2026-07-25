@@ -8,6 +8,7 @@ hidden, never recreated, so the affinity flag sticks.
 """
 
 import ctypes
+import json
 import logging
 import threading
 
@@ -32,9 +33,9 @@ def _dpi_scale() -> float:
 
 
 S = _dpi_scale()
-TOOLBAR_W, TOOLBAR_H = int(460 * S), int(64 * S)
-BUBBLE = int(275 * S)                       # circle shape (square window)
-BUBBLE_RECT_W, BUBBLE_RECT_H = int(375 * S), int(211 * S)   # 16:9 fallback
+TOOLBAR_W, TOOLBAR_H = int(60 * S), int(430 * S)
+BUBBLE = int(358 * S)                       # circle shape (square window)
+BUBBLE_RECT_W, BUBBLE_RECT_H = int(488 * S), int(274 * S)   # 16:9 fallback
 COUNTDOWN = int(180 * S)
 PANEL_W, PANEL_H = int(336 * S), int(664 * S)
 PANEL_MARGIN = int(14 * S)
@@ -117,9 +118,10 @@ class Overlays:
             resizable=False, on_top=True, background_color="#17181c",
             easy_drag=False)
         self._panel_visible = False
-        # excluded from capture like the toolbar: if it's open when recording
-        # starts (countdown overlap), it must not land in the video
-        self._exclude_later("DR-Panel")
+        # NOT capture-excluded: the panel hides before recording starts, so
+        # it can never appear in a video — and staying capturable keeps it
+        # visible to remote-stream operators
+        self._exclude_later("DR-Panel", exclude=False)
         return self.panel
 
     def _panel_pos(self) -> tuple[int, int]:
@@ -159,6 +161,13 @@ class Overlays:
                                         and self.recording_check()):
                 self.hide_bubble()
 
+    def set_panel_link(self, url: str) -> None:
+        try:
+            self.panel.evaluate_js(
+                f"window.setLastLink && setLastLink({json.dumps(url)})")
+        except Exception:
+            pass
+
     def toggle_panel(self):
         if getattr(self, "_panel_visible", False):
             self.hide_panel()
@@ -180,9 +189,10 @@ class Overlays:
             self._exclude_later("DR-Toolbar")
 
     def show_toolbar(self, monitor: int):
+        # Loom-style: vertical bar on the left edge, vertically centered
         geo = devices.monitor_geometry(monitor)
-        x = geo["left"] + (geo["width"] - TOOLBAR_W) // 2
-        y = geo["top"] + geo["height"] - TOOLBAR_H - int(48 * S)
+        x = geo["left"] + int(14 * S)
+        y = geo["top"] + (geo["height"] - TOOLBAR_H) // 2
         self.toolbar.show()
         self._pin("DR-Toolbar", x, y, TOOLBAR_W, TOOLBAR_H, self.toolbar)
         winapi.dwm_round_corners(self._hwnd("DR-Toolbar"))
@@ -204,7 +214,8 @@ class Overlays:
                 width=COUNTDOWN, height=COUNTDOWN, frameless=True,
                 on_top=True, resizable=False, focus=False,
                 easy_drag=False, background_color="#0d0e11")
-            self._exclude_later("DR-Countdown")
+            # not excluded: the countdown finishes before ffmpeg starts
+            self._exclude_later("DR-Countdown", exclude=False)
 
     def show_countdown(self, monitor: int, seconds: int):
         self.ensure_countdown()
@@ -253,12 +264,15 @@ class Overlays:
         self.ensure_bubble()
         s = config.load_settings()
         shape = s.get("bubble_shape", "rect")
+        # invalidate any pending aspect-fit from a previous show — a stale
+        # rect fit landing after a switch to circle causes geometry mismatch
+        self._aspect_token = object()
         if shape == "circle":
             w = h = BUBBLE
-            css_w = css_h = 275
+            css_w = css_h = 358
         else:
             w, h = BUBBLE_RECT_W, BUBBLE_RECT_H
-            css_w, css_h = 375, 211
+            css_w, css_h = 488, 274
         geo = devices.monitor_geometry(monitor)
         m = int(32 * S)
         x = s["bubble_x"] if s["bubble_x"] is not None else geo["left"] + m
@@ -347,16 +361,15 @@ class Overlays:
 
     # ---- helpers ----
 
-    def _exclude_later(self, title: str):
+    def _exclude_later(self, title: str, exclude: bool = True):
         def run():
             hwnd = winapi.find_window(title)
-            if config.CAPTURE_EXCLUDE:
+            if exclude and config.CAPTURE_EXCLUDE:
                 if not winapi.exclude_from_capture(hwnd):
                     log.error("capture exclusion FAILED for %s — it would "
                               "appear in recordings", title)
-            else:
-                log.info("CAPTURE_EXCLUDE=0: %s stays visible to capture "
-                         "(remote-stream operation) and will appear in "
-                         "recordings", title)
+            elif exclude:
+                log.info("CAPTURE_EXCLUDE=0: %s will appear in recordings",
+                         title)
             winapi.set_toolwindow(hwnd)
         threading.Thread(target=run, daemon=True).start()

@@ -38,28 +38,36 @@
   video.playbackRate = aiSpeed;
   showSpeed(aiSpeed);
 
-  // library click-through: ?autoplay=1&cc=1
-  const params = new URLSearchParams(location.search);
-  if (params.get("cc") === "1" && video.textTracks[0]) {
-    video.textTracks[0].mode = "showing";
-    $("ccBtn")?.setAttribute("aria-pressed", "true");
-  }
-  if (params.get("autoplay") === "1") {
-    video.play().catch(() => {});   // if blocked, the pre-play stays
-  }
+  // Loom-style silent preview: the video plays muted behind the play
+  // button; pressing Play restarts from the top with sound.
+  let previewing = true;
+  video.muted = true;
+  video.play().catch(() => { previewing = false; });
+  const realPlay = () => {
+    if (previewing) {
+      previewing = false;
+      video.pause();
+      video.currentTime = 0;
+      video.muted = false;
+    }
+    video.play();
+  };
 
   const setPlayingUI = (playing) => {
     $("icoPlay").hidden = playing;
     $("icoPause").hidden = !playing;
     $("playBtn").setAttribute("aria-label", playing ? "Pause" : "Play");
   };
-  const toggle = () => (video.paused ? video.play() : video.pause());
+  const toggle = () => {
+    if (previewing || video.paused) realPlay();
+    else video.pause();
+  };
 
-  $("bigplay").addEventListener("click", () => video.play());
+  $("bigplay").addEventListener("click", realPlay);
   $("playBtn").addEventListener("click", toggle);
   video.addEventListener("click", toggle);
   video.addEventListener("play", () => {
-    preplay.classList.add("hidden");
+    if (!previewing) preplay.classList.add("hidden");
     setPlayingUI(true);
   });
   video.addEventListener("pause", () => setPlayingUI(false));
@@ -179,7 +187,9 @@
     }
     rangeStart = null;
   };
-  video.addEventListener("play", () => (rangeStart = video.currentTime));
+  video.addEventListener("play", () => {
+    if (!previewing) rangeStart = video.currentTime;
+  });
   video.addEventListener("pause", closeRange);
   video.addEventListener("seeking", () => { closeRange(); });
   video.addEventListener("seeked", () => { if (!video.paused) rangeStart = video.currentTime; });
@@ -190,6 +200,7 @@
   let firstPlayS = null;
   const pageOpen = performance.now();
   video.addEventListener("play", () => {
+    if (previewing) return;
     pendingPlays += 1;
     if (firstPlayS === null) firstPlayS = (performance.now() - pageOpen) / 1000;
   });
@@ -276,6 +287,45 @@
     $("cPin").checked = false;
   });
 
+  const ptoast = (msg) => {
+    const t = $("ptoast");
+    t.textContent = msg;
+    t.classList.add("show");
+    setTimeout(() => t.classList.remove("show"), 1800);
+  };
+
+  // ---- chapters: list below the video + gaps in the scrub + current name
+  const chapters = window.DR.chapters;
+  if (Array.isArray(chapters) && chapters.length > 1) {
+    $("chapters").hidden = false;
+    const list = $("chapterList");
+    for (const c of chapters) {
+      const b = document.createElement("button");
+      b.className = "chaprow";
+      b.innerHTML = `<span class="t num">${fmt(c.t)}</span><span></span>`;
+      b.querySelector("span:last-child").textContent = c.title;
+      b.addEventListener("click", () => { video.currentTime = c.t; realPlay(); });
+      list.appendChild(b);
+    }
+    const dur0 = window.DR.duration;
+    if (dur0) {
+      for (const c of chapters.slice(1)) {
+        const gap = document.createElement("div");
+        gap.className = "chapgap";
+        gap.style.left = `${(c.t / dur0) * 100}%`;
+        $("scrub").appendChild(gap);
+      }
+    }
+    video.addEventListener("timeupdate", () => {
+      const t = video.currentTime;
+      let cur = chapters[0], idx = 0;
+      chapters.forEach((c, i) => { if (c.t <= t) { cur = c; idx = i; } });
+      $("chapName").textContent = "· " + cur.title;
+      list.querySelectorAll(".chaprow").forEach((r, i) =>
+        r.classList.toggle("now", i === idx));
+    });
+  }
+
   // ---- owner rail (edit toggles + activity), Loom's video-page layout ----
   const EDIT_LABELS = {
     fillers: ["Remove filler words", "filler word"],
@@ -297,6 +347,42 @@
         document.querySelectorAll(".tabpane").forEach((p) =>
           (p.hidden = p.id !== `pane-${t.dataset.tab}`));
       }));
+
+    // Take action buttons
+    $("actRecord")?.addEventListener("click", async () => {
+      try {
+        const r = await fetch("http://127.0.0.1:8477/open", { method: "POST" });
+        if (r.ok) return ptoast("Recorder opened — check the top-right panel");
+        throw new Error();
+      } catch {
+        ptoast("Recorder isn't running on this machine");
+      }
+    });
+    $("actCopyLink")?.addEventListener("click", async () => {
+      await navigator.clipboard.writeText(location.origin + "/w/" + slug);
+      ptoast("Link copied");
+    });
+    $("actCopyTranscript")?.addEventListener("click", async () => {
+      await navigator.clipboard.writeText(window.DR.transcript || "");
+      ptoast("Transcript copied");
+    });
+    $("actEditLink")?.addEventListener("click", async () => {
+      const cur = slug;
+      const next = prompt("Custom link name (3-60 letters, digits, - or _):", cur);
+      if (!next || next === cur) return;
+      const r = await fetch(`/api/dash/recordings/${slug}/slug`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slug: next }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (r.ok) {
+        await navigator.clipboard.writeText(location.origin + "/w/" + d.slug);
+        location.href = "/w/" + d.slug;
+      } else {
+        ptoast(d.detail || "Couldn't change the link");
+      }
+    });
 
     // move the transcript into its rail tab
     const ts = document.getElementById("transcriptSection");
