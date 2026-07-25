@@ -250,6 +250,9 @@ class Overlays:
                 width=BUBBLE, height=BUBBLE, frameless=True, on_top=True,
                 resizable=False, focus=False, background_color="#0e0f12",
                 easy_drag=True)
+            # not capture-excluded (the bubble is recorded on purpose), but
+            # it must stay out of the taskbar/alt-tab like every overlay
+            self._exclude_later("DR-Bubble", exclude=False)
 
             def moved(*_):
                 if self.bubble.x <= -3000:   # parked off-screen, not a drag

@@ -70,10 +70,12 @@ def park(hwnd: int) -> None:
     """Move a window far off-screen instead of hiding it. Transparent
     pywebview windows must never be SW_HIDE'd or created hidden — that skips
     the show/hide hack pywebview needs to activate transparency, leaving a
-    white background."""
+    white background. Parked windows are still 'visible' to the taskbar, so
+    make sure the toolwindow style is on (idempotent fast-path inside)."""
     if hwnd:
         user32.SetWindowPos(wt.HWND(hwnd), wt.HWND(HWND_TOPMOST), -4000, 0,
                             0, 0, SWP_NOSIZE | SWP_NOACTIVATE)
+        set_toolwindow(hwnd)
 
 
 gdi32 = ctypes.windll.gdi32
@@ -144,9 +146,25 @@ def force_rect_topmost(hwnd: int, x: int, y: int, w: int, h: int) -> None:
                         SWP_NOACTIVATE | SWP_SHOWWINDOW)
 
 
+WS_EX_APPWINDOW = 0x00040000
+SW_HIDE = 0
+SW_SHOWNOACTIVATE = 4
+
+
 def set_toolwindow(hwnd: int) -> None:
-    """Keep overlay windows out of the taskbar and alt-tab."""
+    """Keep overlay windows out of the taskbar and alt-tab. The taskbar only
+    re-evaluates a window's button on hide→show, so setting the style on an
+    already-visible window must cycle visibility (safe: callers park windows
+    off-screen, so the cycle is never seen)."""
     if not hwnd:
         return
     style = user32.GetWindowLongW(wt.HWND(hwnd), GWL_EXSTYLE)
-    user32.SetWindowLongW(wt.HWND(hwnd), GWL_EXSTYLE, style | WS_EX_TOOLWINDOW)
+    if style & WS_EX_TOOLWINDOW and not style & WS_EX_APPWINDOW:
+        return
+    was_visible = user32.IsWindowVisible(wt.HWND(hwnd))
+    if was_visible:
+        user32.ShowWindow(wt.HWND(hwnd), SW_HIDE)
+    user32.SetWindowLongW(wt.HWND(hwnd), GWL_EXSTYLE,
+                          (style | WS_EX_TOOLWINDOW) & ~WS_EX_APPWINDOW)
+    if was_visible:
+        user32.ShowWindow(wt.HWND(hwnd), SW_SHOWNOACTIVATE)
