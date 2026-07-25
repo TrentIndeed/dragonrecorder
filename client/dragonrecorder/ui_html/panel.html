@@ -147,7 +147,7 @@
       <span>DragonRecorder</span>
     </div>
     <div class="spacer"></div>
-    <button class="mode close" id="close" title="Quit DragonRecorder">
+    <button class="mode close" id="close" title="Hide (Ctrl+Alt+C reopens; quit from the tray icon)">
       <svg viewBox="0 0 24 24"><path d="M6.4 5 5 6.4 10.6 12 5 17.6 6.4 19 12 13.4 17.6 19l1.4-1.4L13.4 12 19 6.4 17.6 5 12 10.6z"/></svg>
     </button>
   </div>
@@ -314,9 +314,7 @@
     save();
   });
   $("more").addEventListener("click", () => pywebview.api.open_dashboard());
-  $("close").addEventListener("click", () => {
-    if (confirm("Quit DragonRecorder?")) pywebview.api.quit_app();
-  });
+  $("close").addEventListener("click", () => pywebview.api.hide_panel());
 
   // live camera preview inside the card, mirroring the screen preview
   let camStream = null;
