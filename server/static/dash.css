@@ -126,7 +126,7 @@
   border-radius: 6px;
   padding: 2px 8px;
   font-size: 12.5px;
-  color: var(--text);
+  color: #fff;
 }
 .status-badge {
   position: absolute;
@@ -136,7 +136,7 @@
   padding: 2px 8px;
   font-size: 12px;
   background: rgba(10, 11, 13, 0.85);
-  color: var(--ai);
+  color: #9ec1ff;
 }
 .status-badge.bad { color: var(--faint); }
 .cbody { padding: 12px 14px 12px; }
