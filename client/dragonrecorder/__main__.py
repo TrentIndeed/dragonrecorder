@@ -121,7 +121,8 @@ class PanelApi:
                 ov.set_bubble_blur(cur["blur"])
 
     def start_recording(self):
-        self._app.overlays.hide_panel()
+        # keep the webcam preview up — it becomes the recorded bubble
+        self._app.overlays.hide_panel(keep_bubble=True)
         self._app.session.toggle()
 
     def hide_panel(self):
@@ -245,7 +246,7 @@ class App:
     def render_job_loop(self):
         from . import processing
         while True:
-            time.sleep(300)
+            time.sleep(60)
             try:
                 processing.poll_render_jobs()
             except Exception:
@@ -299,9 +300,15 @@ class App:
         threading.Thread(target=self.cleanup_old_takes, daemon=True).start()
         # web dashboard "Record a video" button → open the launcher panel
         from . import bridge
+
+        def render_now():
+            from . import processing
+            threading.Thread(target=processing.poll_render_jobs,
+                             daemon=True).start()
         bridge.start(self.overlays.show_panel, self.overlays.hide_panel,
                      lambda: {"state": self.session.state.name,
-                              "pid": os.getpid()})
+                              "pid": os.getpid()},
+                     render_now)
 
     def main(self):
         from . import bridge

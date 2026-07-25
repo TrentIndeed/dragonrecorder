@@ -38,6 +38,16 @@
   video.playbackRate = aiSpeed;
   showSpeed(aiSpeed);
 
+  // library click-through: ?autoplay=1&cc=1
+  const params = new URLSearchParams(location.search);
+  if (params.get("cc") === "1" && video.textTracks[0]) {
+    video.textTracks[0].mode = "showing";
+    $("ccBtn")?.setAttribute("aria-pressed", "true");
+  }
+  if (params.get("autoplay") === "1") {
+    video.play().catch(() => {});   // if blocked, the pre-play stays
+  }
+
   const setPlayingUI = (playing) => {
     $("icoPlay").hidden = playing;
     $("icoPause").hidden = !playing;
@@ -322,6 +332,11 @@
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ enabled: ev.target.checked }),
           });
+          // poke the local recorder to render right now (works when this
+          // browser runs on the recording machine; harmless elsewhere)
+          fetch("http://127.0.0.1:8477/render", { method: "POST" })
+            .catch(() => {});
+          watchRender();
           refresh();
         });
         box.appendChild(row);
@@ -379,6 +394,7 @@
       c2.clearRect(0, 0, cv.width, cv.height);
       const heat = await fetch(`/api/w/${slug}/heatmap`).then((r) => r.json())
         .catch(() => null);
+      window.__railRefresh = refresh;
       const buckets = heat?.buckets || new Array(100).fill(0);
       const max = Math.max(1, ...buckets);
       for (let i = 0; i < 100; i++) {
@@ -390,6 +406,28 @@
     refresh();
   };
   buildRail();
+
+  // after toggling a cut edit, poll until its render lands, then reload the
+  // video so the applied cut is what plays
+  let renderWatch = null;
+  function watchRender() {
+    if (renderWatch) return;
+    let tries = 0;
+    renderWatch = setInterval(async () => {
+      tries += 1;
+      const d = await fetch(`/api/dash/recordings/${slug}`)
+        .then((r) => r.json()).catch(() => null);
+      if (!d) return;
+      const pendingCut = d.edits.some((e) =>
+        ["fillers", "silences"].includes(e.kind) && e.enabled && !e.has_render);
+      if (window.__railRefresh) window.__railRefresh();
+      if (!pendingCut || tries > 40) {
+        clearInterval(renderWatch);
+        renderWatch = null;
+        if (!pendingCut) location.reload();   // play the edited render
+      }
+    }, 4000);
+  }
 
   // ---- transcript click-to-seek (word-level if words.json exists) ----
   const tb = $("transcriptBody");

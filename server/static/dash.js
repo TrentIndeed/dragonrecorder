@@ -121,9 +121,15 @@
         toast("Recording deleted");
         load();
       });
-      card.addEventListener("click", () => (location.href = `/w/${r.slug}`));
+      card.addEventListener("click", () =>
+        (location.href = `/w/${r.slug}?autoplay=1&cc=1`));
       grid.appendChild(card);
     }
   };
   load();
+  // keep the library fresh: new recordings appear without a manual reload
+  setInterval(load, 10000);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") load();
+  });
 })();

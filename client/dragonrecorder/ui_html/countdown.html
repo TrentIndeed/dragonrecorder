@@ -6,38 +6,62 @@
   * { user-select: none; box-sizing: border-box; }
   /* opaque: the window is clipped to an ellipse by a win32 region */
   html, body { margin: 0; height: 100%; background: #0d0e11; overflow: hidden; }
-  .ring {
-    width: 100%; height: 100%; border-radius: 50%;
-    background: #0d0e11; border: 4px solid #ff4545;
-    display: flex; align-items: center; justify-content: center;
+  body { transition: opacity 0.25s ease; }
+  body.out { opacity: 0; }
+  .wrap { position: relative; width: 100%; height: 100%; }
+  svg.ring { position: absolute; inset: 0; width: 100%; height: 100%;
+             transform: rotate(-90deg); }
+  .ring circle {
+    fill: none; stroke-width: 5;
   }
+  .ring .track { stroke: rgba(255, 255, 255, 0.12); }
+  .ring .sweep {
+    stroke: #ff4545; stroke-linecap: round;
+    stroke-dasharray: 289; stroke-dashoffset: 289;
+  }
+  .ring .sweep.tick { animation: sweep 1s linear forwards; }
+  @keyframes sweep { from { stroke-dashoffset: 289; } to { stroke-dashoffset: 0; } }
   .n {
-    font: 700 84px "Cascadia Mono", ui-monospace, Consolas, monospace;
+    position: absolute; inset: 0; display: flex; align-items: center;
+    justify-content: center;
+    font: 700 84px "Roboto", "Cascadia Mono", ui-monospace, monospace;
     font-variant-numeric: tabular-nums; color: #e8e9eb;
-    display: inline-block;
   }
-  .n.tick { animation: pop 0.9s ease-out; }
+  .n span.tick { animation: pop 0.9s ease-out; display: inline-block; }
   @keyframes pop {
     0% { transform: scale(1.35); opacity: 0.2; }
     30% { transform: scale(1); opacity: 1; }
     100% { transform: scale(1); opacity: 1; }
   }
-  @media (prefers-reduced-motion: reduce) { .n.tick { animation: none; } }
+  @media (prefers-reduced-motion: reduce) {
+    .ring .sweep.tick, .n span.tick { animation: none; }
+    .ring .sweep.tick { stroke-dashoffset: 0; }
+  }
 </style>
 </head>
 <body>
-  <div class="ring"><span class="n" id="n">3</span></div>
+  <div class="wrap">
+    <svg class="ring" viewBox="0 0 100 100">
+      <circle class="track" cx="50" cy="50" r="46"></circle>
+      <circle class="sweep" cx="50" cy="50" r="46"></circle>
+    </svg>
+    <div class="n"><span id="n">3</span></div>
+  </div>
   <script>
     function setCount(n) {
+      document.body.classList.remove("out");
       const el = document.getElementById("n");
       el.textContent = n;
       el.classList.remove("tick");
-      void el.offsetWidth;   // restart the animation
+      const sweep = document.querySelector(".sweep");
+      sweep.classList.remove("tick");
+      void el.offsetWidth;   // restart animations
       el.classList.add("tick");
+      sweep.classList.add("tick");
     }
+    function fadeOut() { document.body.classList.add("out"); }
   </script>
 <script>
-  // page zoom persists in the WebView2 profile and breaks fixed layouts
   addEventListener("wheel", (e) => { if (e.ctrlKey) e.preventDefault(); }, { passive: false });
   addEventListener("keydown", (e) => {
     if (e.ctrlKey && ["=", "-", "+", "0"].includes(e.key)) e.preventDefault();

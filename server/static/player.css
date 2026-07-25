@@ -30,6 +30,14 @@
   line-height: 0;
 }
 .stage video { width: 100%; max-height: 72vh; }
+/* captions: YouTube-style — Roboto, compact, dark plate */
+.stage video::cue {
+  font-family: "Roboto", "Segoe UI", Arial, sans-serif;
+  font-size: 17px;
+  line-height: 1.35;
+  color: #fff;
+  background: rgba(8, 8, 8, 0.75);
+}
 
 .preplay {
   position: absolute;

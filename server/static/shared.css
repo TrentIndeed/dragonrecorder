@@ -14,7 +14,7 @@
   --live: #ff4545;
   --ok: #7dd490;
   --mono: "Cascadia Mono", ui-monospace, Consolas, monospace;
-  --sans: system-ui, "Segoe UI", sans-serif;
+  --sans: "Roboto", "YouTube Sans", "Segoe UI", system-ui, Arial, sans-serif;
   --radius: 10px;
 }
 * { box-sizing: border-box; }

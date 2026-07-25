@@ -49,9 +49,9 @@
   .row:hover { background: var(--row-hi); }
   .row svg { width: 17px; height: 17px; fill: var(--muted); flex: none; }
   .row select {
-    flex: 1; background: transparent; color: var(--text); border: none;
-    font: inherit; outline: none; appearance: none; cursor: pointer;
-    text-overflow: ellipsis; padding-right: 14px;
+    flex: 1 1 0; min-width: 0; background: transparent; color: var(--text);
+    border: none; font: inherit; outline: none; appearance: none;
+    cursor: pointer; text-overflow: ellipsis; padding-right: 4px;
   }
   .row select option { background: var(--row); color: var(--text); }
   .row .chev { margin-left: -14px; pointer-events: none; }
@@ -70,7 +70,8 @@
     overflow: hidden; background: #101114; height: 148px;
   }
   .screenpreview img {
-    width: 100%; height: 100%; object-fit: cover; display: block;
+    width: 100%; height: 100%; object-fit: contain; display: block;
+    background: #000;
   }
   .screenlist {
     position: absolute; inset: 0; background: rgba(14, 15, 18, 0.97);
@@ -82,13 +83,21 @@
     border-radius: 9px; overflow: hidden; cursor: pointer; background: none;
     padding: 0; position: relative;
   }
-  .screenopt img { width: 100%; height: 76px; object-fit: cover; display: block; }
+  .screenopt img { width: 100%; height: 76px; object-fit: contain;
+    display: block; background: #000; }
   .screenopt .lab {
     display: block; font-size: 11px; color: var(--muted); padding: 3px 0 4px;
     text-align: center;
   }
   .screenopt.sel { border-color: var(--ai); }
   .screenopt.sel .lab { color: var(--ai); }
+  .campreview {
+    margin: 0 0 8px; border-radius: 11px; overflow: hidden;
+    background: #000; height: 108px;
+  }
+  .campreview video {
+    width: 100%; height: 100%; object-fit: contain; display: block;
+  }
 
   .start {
     width: 100%; height: 46px; margin: 4px 0 10px; border: none;
@@ -143,6 +152,9 @@
     <span class="badge off" id="camBadge">Off</span>
     <svg class="chev" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5z"/></svg>
   </label>
+  <div class="campreview" id="camPreview" hidden>
+    <video id="camVid" autoplay muted playsinline></video>
+  </div>
   <label class="row" title="Microphone">
     <svg viewBox="0 0 24 24"><path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v5a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z"/></svg>
     <select id="mic" aria-label="Microphone"></select>
@@ -215,7 +227,7 @@
       renderScreens();
     } catch (e) {}
   }
-  window.onPanelShown = () => refreshPreviews();
+  window.onPanelShown = () => { refreshPreviews(); updateCamPreview(); };
 
   async function load() {
     const info = await pywebview.api.get_setup();
@@ -237,6 +249,7 @@
     });
     fill($("camera"), info.cameras, info.settings.camera, "No Camera");
     fill($("mic"), info.mics, info.settings.mic, "No Microphone");
+    updateCamPreview();
     $("blur").classList.toggle("on", info.settings.blur);
     shape = info.settings.bubble_shape || "rect";
     renderShape();
@@ -279,11 +292,31 @@
   });
   $("more").addEventListener("click", () => pywebview.api.open_dashboard());
   $("close").addEventListener("click", () => {
-    if (confirm("Quit DragonRecorder? The tray app, hotkeys, and any "
-        + "background processing will stop.")) {
-      pywebview.api.quit_app();
-    }
+    if (confirm("Quit DragonRecorder?")) pywebview.api.quit_app();
   });
+
+  // live camera preview inside the card, mirroring the screen preview
+  let camStream = null;
+  async function updateCamPreview() {
+    const name = $("camera").value;
+    const box = $("camPreview");
+    if (camStream) { camStream.getTracks().forEach(t => t.stop()); camStream = null; }
+    if (!name) { box.hidden = true; return; }
+    try {
+      const devs = await navigator.mediaDevices.enumerateDevices();
+      const match = devs.find(d => d.kind === "videoinput" && d.label === name);
+      const vc = { width: { ideal: 640 } };
+      if (match) vc.deviceId = { exact: match.deviceId };
+      camStream = await navigator.mediaDevices.getUserMedia({ video: vc });
+      $("camVid").srcObject = camStream;
+      box.hidden = false;
+    } catch (e) { box.hidden = true; }
+  }
+  window.onPanelHidden = () => {
+    if (camStream) { camStream.getTracks().forEach(t => t.stop()); camStream = null; }
+    $("camPreview").hidden = true;
+  };
+  $("camera").addEventListener("change", updateCamPreview);
   $("start").addEventListener("click", async () => {
     save();
     await new Promise(r => setTimeout(r, 200));

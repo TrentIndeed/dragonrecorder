@@ -104,7 +104,7 @@
 
     {% if r.transcript %}
     <section class="transcript" id="transcriptSection" aria-label="Transcript">
-      <h2>Transcript <span class="pill ai-badge">AI</span></h2>
+      <h2>Transcript</h2>
       <div id="transcriptBody" data-has-words="{{ 1 if r.has_words else 0 }}">{{ r.transcript }}</div>
     </section>
     {% endif %}
@@ -119,7 +119,6 @@
       <button class="tab" data-tab="transcript" role="tab">Transcript</button>
     </div>
     <div class="tabpane" id="pane-edit">
-      <div class="powered">Powered by AI <span class="ai-star">✦</span></div>
       <h3>Make edits</h3>
       <div id="railEdits"></div>
     </div>

@@ -36,7 +36,7 @@ TOOLBAR_W, TOOLBAR_H = int(460 * S), int(64 * S)
 BUBBLE = int(275 * S)                       # circle shape (square window)
 BUBBLE_RECT_W, BUBBLE_RECT_H = int(375 * S), int(211 * S)   # 16:9 fallback
 COUNTDOWN = int(180 * S)
-PANEL_W, PANEL_H = int(336 * S), int(548 * S)
+PANEL_W, PANEL_H = int(336 * S), int(664 * S)
 PANEL_MARGIN = int(14 * S)
 
 
@@ -145,12 +145,18 @@ class Overlays:
             if s["camera"]:
                 self.show_bubble(s["monitor"], s["camera"], s["blur"])
 
-    def hide_panel(self):
+    def hide_panel(self, keep_bubble: bool = False):
         if self.panel:
+            try:   # stop the in-card camera preview
+                self.panel.evaluate_js("window.onPanelHidden && onPanelHidden()")
+            except Exception:
+                pass
             winapi.park(self._hwnd("DR-Panel"))
             self._panel_visible = False
-            # panel dismissed without recording → drop the preview too
-            if not (self.recording_check and self.recording_check()):
+            # panel dismissed without recording → drop the preview too,
+            # unless a recording is about to start (bubble stays persistent)
+            if not keep_bubble and not (self.recording_check
+                                        and self.recording_check()):
                 self.hide_bubble()
 
     def toggle_panel(self):
@@ -205,11 +211,13 @@ class Overlays:
         geo = devices.monitor_geometry(monitor)
         x = geo["left"] + (geo["width"] - COUNTDOWN) // 2
         y = geo["top"] + (geo["height"] - COUNTDOWN) // 2
+        hwnd = self._hwnd("DR-Countdown")
+        winapi.dwm_no_round(hwnd)
+        winapi.set_ellipse_region(hwnd, COUNTDOWN, COUNTDOWN)
         self.set_countdown(seconds)
         self.countdown.show()
         self._pin("DR-Countdown", x, y, COUNTDOWN, COUNTDOWN, self.countdown)
-        winapi.set_ellipse_region(self._hwnd("DR-Countdown"), COUNTDOWN,
-                                  COUNTDOWN)
+        winapi.set_ellipse_region(hwnd, COUNTDOWN, COUNTDOWN)
 
     def set_countdown(self, n: int):
         if self.countdown:
@@ -257,14 +265,19 @@ class Overlays:
         y = (s["bubble_y"] if s["bubble_y"] is not None
              else geo["top"] + geo["height"] - h - m)
         self.bubble.evaluate_js(f"setShape({css_w}, {css_h})")
-        self.bubble.show()
-        self._pin("DR-Bubble", x, y, w, h, self.bubble)
         hwnd = self._hwnd("DR-Bubble")
+        # shape BEFORE the window enters the screen — no white flash; DWM
+        # rounding must be OFF when a region is active (they fight)
         if shape == "circle":
+            winapi.dwm_no_round(hwnd)
             winapi.set_ellipse_region(hwnd, w, h)
         else:
             winapi.clear_region(hwnd)
             winapi.dwm_round_corners(hwnd)
+        self.bubble.show()
+        self._pin("DR-Bubble", x, y, w, h, self.bubble)
+        if shape == "circle":
+            winapi.set_ellipse_region(hwnd, w, h)   # re-fit after size jiggle
         self._bubble_visible = True
         cam_js = camera.replace("\\", "\\\\").replace("'", "\\'")
         self.bubble.evaluate_js(

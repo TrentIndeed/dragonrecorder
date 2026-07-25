@@ -80,7 +80,18 @@ gdi32 = ctypes.windll.gdi32
 dwmapi = ctypes.windll.dwmapi
 
 DWMWA_WINDOW_CORNER_PREFERENCE = 33
+DWMWCP_DONOTROUND = 1
 DWMWCP_ROUND = 2
+
+
+def dwm_no_round(hwnd: int) -> None:
+    """Disable DWM corner rounding — it fights SetWindowRgn shapes (the
+    lingering 'white square' behind circles)."""
+    if hwnd:
+        pref = ctypes.c_int(DWMWCP_DONOTROUND)
+        dwmapi.DwmSetWindowAttribute(wt.HWND(hwnd),
+                                     DWMWA_WINDOW_CORNER_PREFERENCE,
+                                     ctypes.byref(pref), 4)
 
 
 def dwm_round_corners(hwnd: int) -> None:
