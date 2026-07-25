@@ -117,7 +117,10 @@ body.owner .layout {
 }
 /* icon size lives here, not on the svg width attrs, so the whole bar
    scales as one unit with the stage */
-.controls button svg { width: 25px; height: 25px; }
+.controls button svg { width: 25px; height: 25px; display: block; }
+/* Chrome's UA rule for the `hidden` attribute doesn't reach inline SVG,
+   so the play/pause pair both painted until this was added */
+.controls svg[hidden] { display: none; }
 .controls button:hover { background: rgba(255, 255, 255, 0.15); border-radius: 7px; }
 .controls .timecode { font-size: 15px; color: #fff; white-space: nowrap; }
 .controls .dim { color: rgba(255, 255, 255, 0.6); }
