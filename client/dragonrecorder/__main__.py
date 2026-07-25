@@ -128,6 +128,11 @@ class PanelApi:
     def hide_panel(self):
         self._app.overlays.hide_panel()
 
+    def panel_visible(self):
+        # ground truth for the page's stream watchdog: the panel html only
+        # holds camera/mic streams while the card is actually on screen
+        return bool(getattr(self._app.overlays, "_panel_visible", False))
+
     def quit_app(self):
         # the card's X closes the whole app (tray, bridge, processing) —
         # in a thread so the JS call returns before windows are destroyed

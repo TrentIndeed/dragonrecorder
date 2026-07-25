@@ -318,7 +318,10 @@ class Overlays:
 
     def hide_bubble(self):
         if self.bubble:
-            self.bubble.evaluate_js("stopCamera()")
+            try:
+                self.bubble.evaluate_js("stopCamera()")
+            except Exception:
+                log.warning("stopCamera evaluate failed", exc_info=True)
             winapi.park(self._hwnd("DR-Bubble"))
             self._bubble_visible = False
 

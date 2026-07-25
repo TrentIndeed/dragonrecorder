@@ -249,7 +249,14 @@
       renderScreens();
     } catch (e) {}
   }
-  window.onPanelShown = () => { refreshPreviews(); updateCamPreview(); startMicMeter(); };
+  // device streams may only run while the card is actually on screen —
+  // pywebview keeps this page alive parked off-screen, and a leaked
+  // getUserMedia stream keeps the physical camera LED on forever
+  let panelVisible = false, panelGen = 0;
+  window.onPanelShown = () => {
+    panelVisible = true; panelGen++;
+    refreshPreviews(); updateCamPreview(); startMicMeter();
+  };
 
   async function load() {
     const info = await pywebview.api.get_setup();
@@ -271,8 +278,16 @@
     });
     fill($("camera"), info.cameras, info.settings.camera, "No Camera");
     fill($("mic"), info.mics, info.settings.mic, "No Microphone");
-    updateCamPreview();
-    startMicMeter();
+    // the page loads at app startup while the card is parked off-screen —
+    // only grab camera/mic if the card is really visible (covers the race
+    // where show fired before this load finished)
+    try {
+      if (panelVisible || await pywebview.api.panel_visible()) {
+        panelVisible = true;
+        updateCamPreview();
+        startMicMeter();
+      }
+    } catch (e) {}
     $("blur").classList.toggle("on", info.settings.blur);
     shape = info.settings.bubble_shape || "rect";
     renderShape();
@@ -319,6 +334,7 @@
   // live camera preview inside the card, mirroring the screen preview
   let camStream = null;
   async function updateCamPreview() {
+    const g = panelGen;
     const name = $("camera").value;
     const box = $("camPreview");
     if (camStream) { camStream.getTracks().forEach(t => t.stop()); camStream = null; }
@@ -328,16 +344,28 @@
       const match = devs.find(d => d.kind === "videoinput" && d.label === name);
       const vc = { width: { ideal: 640 } };
       if (match) vc.deviceId = { exact: match.deviceId };
-      camStream = await navigator.mediaDevices.getUserMedia({ video: vc });
+      const s = await navigator.mediaDevices.getUserMedia({ video: vc });
+      // card hidden while we were awaiting → release immediately, don't leak
+      if (g !== panelGen || !panelVisible) { s.getTracks().forEach(t => t.stop()); return; }
+      camStream = s;
       $("camVid").srcObject = camStream;
       box.hidden = false;
     } catch (e) { box.hidden = true; }
   }
   window.onPanelHidden = () => {
+    panelVisible = false; panelGen++;
     if (camStream) { camStream.getTracks().forEach(t => t.stop()); camStream = null; }
     $("camPreview").hidden = true;
     stopMicMeter();
   };
+  // belt and suspenders: if the hide notification from python ever gets
+  // lost, notice within a few seconds and release the devices
+  setInterval(async () => {
+    if (!camStream && !micStream) return;
+    let vis = panelVisible;
+    try { vis = await pywebview.api.panel_visible(); } catch (e) {}
+    if (!vis) window.onPanelHidden();
+  }, 5000);
   $("camera").addEventListener("change", updateCamPreview);
 
   // live mic level meter in the mic row (Loom-style)
@@ -351,6 +379,7 @@
   }
   async function startMicMeter() {
     stopMicMeter();
+    const g = panelGen;
     const name = $("mic").value;
     if (!name) return;
     try {
@@ -358,7 +387,9 @@
       const match = devs.find(d => d.kind === "audioinput" && d.label === name);
       const ac = { };
       if (match) ac.deviceId = { exact: match.deviceId };
-      micStream = await navigator.mediaDevices.getUserMedia({ audio: ac });
+      const s = await navigator.mediaDevices.getUserMedia({ audio: ac });
+      if (g !== panelGen || !panelVisible) { s.getTracks().forEach(t => t.stop()); return; }
+      micStream = s;
       audioCtx = new AudioContext();
       const src = audioCtx.createMediaStreamSource(micStream);
       const an = audioCtx.createAnalyser();

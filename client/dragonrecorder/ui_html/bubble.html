@@ -136,8 +136,14 @@
     requestAnimationFrame(loop);
   }
 
+  let camGen = 0, starting = false;
   window.startCamera = async (dshowName, blur) => {
-    if (running) return;   // idempotent: panel-show + record-start both call
+    // single-flight: panel-show + record-start can call within ms of each
+    // other — a second concurrent getUserMedia would orphan the first
+    // stream and pin the camera LED on forever
+    if (running || starting) return;
+    starting = true;
+    const g = camGen;
     blurOn = blur;
     try {
       const devices = await navigator.mediaDevices.enumerateDevices();
@@ -146,19 +152,27 @@
       // max the camera can do, at ITS native aspect (no forcing)
       const vc = { width: { ideal: 3840 }, height: { ideal: 2160 } };
       if (match) vc.deviceId = { exact: match.deviceId };
-      stream = await navigator.mediaDevices.getUserMedia({
+      const s = await navigator.mediaDevices.getUserMedia({
         video: vc, audio: false,
       });
+      if (g !== camGen) {   // stopCamera arrived while we were awaiting
+        s.getTracks().forEach((t) => t.stop());
+        return;
+      }
+      stream = s;
       video.srcObject = stream;
       await video.play();
       document.getElementById("err").style.display = "none";
       if (blurOn) await loadSegmenter();
+      if (g !== camGen) return;   // stopped during play/segmenter setup
       running = true;
       loop();
     } catch (e) {
       document.getElementById("err").style.display = "flex";
       document.getElementById("err").textContent =
         "Camera unavailable: " + e.name;
+    } finally {
+      starting = false;
     }
   };
 
@@ -168,6 +182,7 @@
   };
 
   window.stopCamera = () => {
+    camGen++;   // invalidates any startCamera still awaiting getUserMedia
     running = false;
     if (stream) stream.getTracks().forEach((t) => t.stop());
     stream = null;
