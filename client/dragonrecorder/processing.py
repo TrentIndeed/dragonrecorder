@@ -137,6 +137,70 @@ def detect_silences(segments: list[dict], duration: float,
     return cuts
 
 
+QUIET_RATIO = 0.06        # share of the loudest peak that still counts as quiet
+
+
+def quiet_regions(peaks_data: dict) -> list[list[float]]:
+    """Stretches that are actually quiet, measured from the audio itself."""
+    peaks = peaks_data.get("peaks") or []
+    dur = peaks_data.get("duration") or 0
+    if not peaks or not dur:
+        return []
+    floor = max(peaks) * QUIET_RATIO
+    step = dur / len(peaks)
+    out, run_start = [], None
+    for i, p in enumerate(peaks):
+        if p <= floor:
+            if run_start is None:
+                run_start = i * step
+        elif run_start is not None:
+            out.append([run_start, i * step])
+            run_start = None
+    if run_start is not None:
+        out.append([run_start, dur])
+    return out
+
+
+def intersect(a: list[list[float]], b: list[list[float]],
+              min_len: float = MIN_CUT_S) -> list[list[float]]:
+    """Overlap of two region lists (both assumed sorted, non-overlapping)."""
+    out, i, j = [], 0, 0
+    while i < len(a) and j < len(b):
+        s = max(a[i][0], b[j][0])
+        e = min(a[i][1], b[j][1])
+        if e - s >= min_len:
+            out.append([round(s, 3), round(e, 3)])
+        if a[i][1] < b[j][1]:
+            i += 1
+        else:
+            j += 1
+    return out
+
+
+def refine_silences(cuts: list[list[float]],
+                    peaks_data: dict | None) -> list[list[float]]:
+    """Only cut where the transcript AND the waveform agree it is silent.
+
+    Whisper's VAD drops anything it does not read as speech, so a stretch of
+    real audio it skipped — a cough, a keyboard, a sentence it missed — looks
+    like a gap and was being cut out. Intersecting with measured quiet keeps
+    audible content in the video.
+    """
+    if not peaks_data or not cuts:
+        return cuts
+    quiet = quiet_regions(peaks_data)
+    if not quiet:
+        return cuts
+    # a refined piece still has to be a real pause, or removing it just
+    # chops half-second holes between bursts of audio
+    refined = intersect(cuts, quiet, min_len=MIN_SILENCE_S)
+    dropped = sum(e - s for s, e in cuts) - sum(e - s for s, e in refined)
+    if dropped > 0.05:
+        log.info("silence cuts trimmed by %.1fs — that audio was not silent",
+                 dropped)
+    return refined
+
+
 def detect_fillers(words: list[dict]) -> list[list[float]]:
     """Word-level filler cuts from whisper word timestamps."""
     clean = [re.sub(r"[^a-z']", "", w["word"].lower()) for w in words]
@@ -473,6 +537,13 @@ def run_pipeline(slug: str, video: Path) -> None:
     #    can show "0 found" (proof the detector ran) instead of hiding it
     auto = api.get_auto_apply()
     silence_cuts = detect_silences(tr["segments"], duration, tr["words"])
+    # keep anything the waveform says is audible, whatever whisper thought
+    if peaks:
+        try:
+            silence_cuts = refine_silences(
+                silence_cuts, json.loads(peaks.read_text("utf-8")))
+        except (OSError, ValueError):
+            log.warning("could not read peaks for silence refinement")
     filler_cuts = detect_fillers(tr["words"])
     detections = {
         "fillers": filler_cuts,

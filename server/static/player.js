@@ -459,9 +459,13 @@
     const accent = getComputedStyle(document.documentElement)
       .getPropertyValue("--accent").trim() || "#2c6bff";
     const isCut = (t) => cutRegions.some(([s, e]) => t >= s && t <= e);
+    // Normalise to the loudest peak and bend the curve: speech sits far
+    // below full scale, so a linear strip is a flat line with a few spikes.
+    const loudest = Math.max(0.02, ...peaks);
     for (let i = 0; i < peaks.length; i++) {
       const t = (i / peaks.length) * dur;
-      const h = Math.max(1.5, peaks[i] * (cssH - 6));
+      const rel = Math.pow(peaks[i] / loudest, 0.55);
+      const h = Math.max(1.5, rel * (cssH - 6));
       g.fillStyle = isCut(t) ? "#9aa3b2" : accent;
       g.fillRect(i * barW, mid - h / 2, Math.max(1, barW - 0.5), h);
     }
