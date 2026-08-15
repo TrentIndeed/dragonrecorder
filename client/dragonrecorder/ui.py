@@ -298,9 +298,23 @@ class Overlays:
         css_w, css_h = css_w + 2 * SHADOW_PAD, css_h + 2 * SHADOW_PAD
         geo = devices.monitor_geometry(monitor)
         m = int(32 * S)
-        x = s["bubble_x"] if s["bubble_x"] is not None else geo["left"] + m
-        y = (s["bubble_y"] if s["bubble_y"] is not None
-             else geo["top"] + geo["height"] - h - m)
+        # default: bottom-left of the chosen screen
+        x, y = geo["left"] + m, geo["top"] + geo["height"] - h - m
+        saved_x, saved_y = s["bubble_x"], s["bubble_y"]
+        if saved_x is not None and saved_y is not None:
+            # only honour a dragged position if it is actually ON the screen
+            # being recorded — otherwise the bubble ends up on another
+            # monitor (invisible in the take) after a screen switch
+            if (geo["left"] - w // 2 <= saved_x <= geo["left"] + geo["width"] - w // 2
+                    and geo["top"] - h // 2 <= saved_y
+                    <= geo["top"] + geo["height"] - h // 2):
+                x, y = saved_x, saved_y
+            else:
+                log.info("saved bubble position (%s,%s) is not on screen %d — "
+                         "resetting to the default corner", saved_x, saved_y,
+                         monitor)
+                s["bubble_x"] = s["bubble_y"] = None
+                config.save_settings(s)
         self.bubble.evaluate_js(f"setShape({css_w}, {css_h})")
         self.bubble.show()
         self._pin("DR-Bubble", x, y, w, h, self.bubble)
@@ -310,6 +324,28 @@ class Overlays:
         self.bubble.evaluate_js(
             f"startCamera('{cam_js}', {str(blur).lower()}, "
             f"{int(s.get('blur_strength', 6))})")
+
+    def resize_bubble(self, scale_pct: int) -> None:
+        """Resize the live bubble in place, for slider drags.
+
+        Recreating the window per slider tick is far too slow to follow a
+        drag, so this keeps the same window and just re-lays it out, anchored
+        at its top-left so it does not walk across the screen.
+        """
+        if not self.bubble or not getattr(self, "_bubble_visible", False):
+            return
+        s = config.load_settings()
+        shape = s.get("bubble_shape", "rect")
+        base_w, base_h = ((358, 358) if shape == "circle" else (488, 274))
+        scale = max(50, min(160, int(scale_pct))) / 100.0
+        css_w = int(base_w * scale) + 2 * SHADOW_PAD
+        css_h = int(base_h * scale) + 2 * SHADOW_PAD
+        w, h = int(css_w * S), int(css_h * S)
+        hwnd = self._hwnd("DR-Bubble")
+        rect = winapi.window_rect(hwnd)
+        x, y = (rect[0], rect[1]) if rect else (0, 0)
+        self.bubble.evaluate_js(f"setShape({css_w}, {css_h})")
+        winapi.force_rect_topmost(hwnd, x, y, w, h)
 
     def set_bubble_blur(self, blur: bool, strength: int | None = None):
         if self.bubble:
@@ -332,12 +368,16 @@ class Overlays:
 
     def hide_bubble(self):
         if self.bubble:
+            # park FIRST: stopping the camera clears the canvas, and ffmpeg is
+            # still capturing for a moment after stop — clearing while the
+            # window is on screen is what put a black circle on the last
+            # frames of every recording
+            winapi.park(self._hwnd("DR-Bubble"))
+            self._bubble_visible = False
             try:
                 self.bubble.evaluate_js("stopCamera()")
             except Exception:
                 log.warning("stopCamera evaluate failed", exc_info=True)
-            winapi.park(self._hwnd("DR-Bubble"))
-            self._bubble_visible = False
 
     # ---- drawing overlay (captured on purpose) ----
 

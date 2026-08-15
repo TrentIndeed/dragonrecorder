@@ -47,8 +47,11 @@ DEFAULT_SETTINGS = {
     "blur": False,
     "blur_strength": 6,    # background blur radius in px (2-16)
     "bubble_shape": "rect",   # "rect" (rounded rectangle) or "circle"
-    "bubble_scale": 100,   # camera bubble size, percent (50-160)
+    "bubble_scale": 80,    # camera bubble size, percent (50-160)
     "fps": 30,
+    # how far ahead of the video the mic runs, in ms — see recorder._cmd.
+    # Re-measure per machine with tools/measure_av_sync.py.
+    "av_offset_ms": 260,
     "start_sound": True,   # audible cue when capture actually begins
     "bubble_x": None,      # remembered bubble position
     "bubble_y": None,

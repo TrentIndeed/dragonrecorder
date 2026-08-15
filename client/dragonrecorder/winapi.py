@@ -149,11 +149,16 @@ def set_colorkey_transparent(hwnd: int, rgb: tuple[int, int, int] | None = None
     return ok
 
 
-def window_size(hwnd: int) -> tuple[int, int]:
+def window_rect(hwnd: int) -> tuple[int, int, int, int] | None:
     r = wt.RECT()
     if not hwnd or not user32.GetWindowRect(wt.HWND(hwnd), ctypes.byref(r)):
-        return (0, 0)
-    return (r.right - r.left, r.bottom - r.top)
+        return None
+    return (r.left, r.top, r.right, r.bottom)
+
+
+def window_size(hwnd: int) -> tuple[int, int]:
+    r = window_rect(hwnd)
+    return (0, 0) if r is None else (r[2] - r[0], r[3] - r[1])
 
 
 def hide_window(hwnd: int) -> None:

@@ -69,7 +69,8 @@ class Session:
         self.rec = recorder.Recorder(
             take_dir, settings["monitor"], settings["mic"],
             settings.get("fps", 30),
-            denoise=settings.get("mic_denoise", True))
+            denoise=settings.get("mic_denoise", True),
+            av_offset_ms=settings.get("av_offset_ms", 260))
         if countdown_s > 0:
             self.ui.show_countdown(settings["monitor"], countdown_s)
             threading.Thread(target=self._countdown_then_start,

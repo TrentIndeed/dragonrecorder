@@ -171,13 +171,14 @@ class Recorder:
     """One Recorder per take. Owns the segment list and the live ffmpeg."""
 
     def __init__(self, take_dir: Path, monitor: int, mic: str, fps: int = 30,
-                 denoise: bool = True):
+                 denoise: bool = True, av_offset_ms: int = 260):
         self.take_dir = take_dir
         self.take_dir.mkdir(parents=True, exist_ok=True)
         self.monitor = monitor
         self.mic = mic
         self.fps = fps
         self.denoise = denoise
+        self.av_offset_ms = av_offset_ms
         self.segments: list[Path] = []
         self.proc: subprocess.Popen | None = None
         self.use_nvenc = _nvenc_available()
@@ -190,7 +191,18 @@ class Recorder:
         ff = config.find_ffmpeg()
         cmd = [ff, "-hide_banner", "-y"]
         if self.mic:
+            # A/V sync: dshow starts filling its buffer the moment the device
+            # opens, while ddagrab needs a few hundred ms to bring up D3D11
+            # and desktop duplication — so audio ends up describing an
+            # earlier moment than the video beside it. Measured on this
+            # machine with a synchronised flash+tone probe (tools/
+            # measure_av_sync.py): 689-796 ms of audio lag out of the box.
+            # Shrinking the dshow buffer removes ~450 ms of it, and the
+            # remaining constant is compensated by itsoffset, leaving a
+            # typical residual of about 20 ms.
             cmd += ["-f", "dshow", "-rtbufsize", "64M",
+                    "-audio_buffer_size", "50",
+                    "-itsoffset", f"-{self.av_offset_ms / 1000:.3f}",
                     "-i", f"audio={self.mic}"]
         if self.use_nvenc:
             cmd += [

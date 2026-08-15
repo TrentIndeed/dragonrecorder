@@ -73,9 +73,13 @@
       const card = document.createElement("div");
       card.className = "card";
       const dl = daysLeft(r.expires_at);
+      // "ready" only means the video is playable; transcript, AI title and
+      // the edit detectors land a little later, and a card with neither a
+      // title nor edits reads as "nothing happened" without this
+      const analyzing = r.status === "ready" && !r.analyzed;
       const badge = r.status !== "ready"
         ? `<span class="status-badge ${r.status === "pending" ? "" : "bad"}">${r.status}</span>`
-        : "";
+        : (analyzing ? '<span class="status-badge">analyzing…</span>' : "");
       card.innerHTML = `
         <div class="thumbwrap">
           <img src="/media/${r.slug}/thumb.jpg" loading="lazy" alt=""
@@ -99,7 +103,7 @@
           </div>
         </div>`;
       const title = card.querySelector(".title");
-      title.value = r.title || "Untitled recording";
+      title.value = r.title || (analyzing ? "Naming it…" : "Untitled recording");
       title.addEventListener("click", (e) => e.stopPropagation());
       title.addEventListener("change", async () => {
         await fetch(`/api/dash/recordings/${r.slug}`, {

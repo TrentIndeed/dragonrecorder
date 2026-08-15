@@ -502,16 +502,30 @@
         '<p class="empty">No transcript for this recording.</p>';
     }
 
+    let analyzeTimer = null;
     const refresh = async () => {
       const d = await (await fetch(`/api/dash/recordings/${slug}`)).json();
       const box = $("railEdits");
       box.textContent = "";
       const byKind = Object.fromEntries(d.edits.map((e) => [e.kind, e]));
+      // no edit rows at all = the recorder has not finished analysing yet.
+      // Without saying so, a fresh recording looks identical to one where
+      // the detectors ran and found nothing.
+      if (!d.edits.length) {
+        box.innerHTML =
+          '<div class="edit-row zero"><span>Analyzing the recording —' +
+          ' transcript, title and edits appear here shortly.</span></div>';
+        clearTimeout(analyzeTimer);
+        analyzeTimer = setTimeout(refresh, 5000);
+        return;
+      }
       for (const kind of ["fillers", "silences", "captions"]) {
         const e = byKind[kind];
         const [label, unit] = EDIT_LABELS[kind];
         const row = document.createElement("label");
         row.className = "edit-row" + (!e || !e.count ? " zero" : "");
+        // distinguish "we looked and there were none" from "not analyzed"
+        if (e && !e.count) row.title = "Analyzed — nothing of this kind found";
         const pendingNote = e && e.count && kind !== "captions" && e.enabled && !e.has_render
           ? '<span class="note">render pending — the recorder picks this up</span>' : "";
         row.innerHTML = `
@@ -519,7 +533,7 @@
                  ${!e || !e.count ? "disabled" : ""}>
           <span>${label}${pendingNote}</span>
           <span class="cnt num">${e == null ? "not analyzed"
-            : `${e.count} found`}</span>`;
+            : (e.count ? `${e.count} found` : "none found")}</span>`;
         row.querySelector("input").addEventListener("change", async (ev) => {
           await fetch(`/api/dash/recordings/${slug}/edits/${kind}`, {
             method: "POST",

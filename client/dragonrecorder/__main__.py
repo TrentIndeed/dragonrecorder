@@ -139,6 +139,14 @@ class PanelApi:
     def hide_panel(self):
         self._app.overlays.hide_panel()
 
+    def preview_bubble_scale(self, pct):
+        """Live feedback while the size slider is being dragged; the value is
+        persisted separately when the drag ends."""
+        try:
+            self._app.overlays.resize_bubble(int(pct))
+        except Exception:
+            log.exception("bubble resize preview failed")
+
     def panel_visible(self):
         # ground truth for the page's stream watchdog: the panel html only
         # holds camera/mic streams while the card is actually on screen

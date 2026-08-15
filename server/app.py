@@ -540,7 +540,10 @@ def dash_list():
             "SELECT r.*,"
             " (SELECT COUNT(*) FROM views v WHERE v.slug=r.slug AND v.is_owner=0"
             "   AND v.watched_s>0) views,"
-            " (SELECT COUNT(*) FROM comments c WHERE c.slug=r.slug) comments"
+            " (SELECT COUNT(*) FROM comments c WHERE c.slug=r.slug) comments,"
+            # the client registers edits last, so their presence is what says
+            # "transcript, title and detectors have all landed"
+            " (SELECT COUNT(*) FROM edits e WHERE e.slug=r.slug) analyzed"
             " FROM recordings r ORDER BY r.created_at DESC").fetchall()
     return {"recordings": [dict(r) for r in rows]}
 

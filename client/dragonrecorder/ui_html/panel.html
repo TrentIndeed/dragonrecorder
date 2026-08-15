@@ -382,11 +382,20 @@
     $("blurStrengthVal").textContent = $("blurStrength").value;
     save();
   });
-  // resizing recreates the bubble window, so only fire when the drag ends
+  // follow the drag live (cheap in-place resize), persist when it ends
+  let sizeTick = 0;
   $("camSize").addEventListener("input", () => {
-    $("camSizeVal").textContent = $("camSize").value;
+    const v = $("camSize").value;
+    $("camSizeVal").textContent = v;
+    const now = performance.now();
+    if (now - sizeTick < 40) return;    // ~25 fps is plenty for a drag
+    sizeTick = now;
+    pywebview.api.preview_bubble_scale(parseInt(v, 10));
   });
-  $("camSize").addEventListener("change", save);
+  $("camSize").addEventListener("change", () => {
+    pywebview.api.preview_bubble_scale(parseInt($("camSize").value, 10));
+    save();
+  });
   $("denoise").addEventListener("change", save);
   $("shape").addEventListener("click", () => {
     shape = shape === "rect" ? "circle" : "rect";
