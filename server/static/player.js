@@ -472,8 +472,64 @@
     const removed = cutRegions.reduce((a, [s, e]) => a + (e - s), 0);
     $("waveNote").textContent =
       `${fmt(removed)} removed of ${fmt(dur)}`;
+    movePlayhead();
   };
   new ResizeObserver(drawWave).observe($("waveStrip"));
+
+  // The video playing is the EDITED render, so its clock skips the removed
+  // stretches. Walking the kept segments converts its time back onto the
+  // original timeline, which is what the strip draws.
+  const keptSegments = () => {
+    const dur = peaksData?.duration || window.DR.duration || 0;
+    const sorted = [...cutRegions].sort((a, b) => a[0] - b[0]);
+    const keeps = [];
+    let pos = 0;
+    for (const [s, e] of sorted) {
+      if (s > pos) keeps.push([pos, s]);
+      pos = Math.max(pos, e);
+    }
+    if (dur > pos) keeps.push([pos, dur]);
+    return keeps;
+  };
+  const editedToOriginal = (t) => {
+    let left = t;
+    for (const [s, e] of keptSegments()) {
+      const span = e - s;
+      if (left <= span) return s + left;
+      left -= span;
+    }
+    return peaksData?.duration || t;
+  };
+  const originalToEdited = (t) => {
+    let acc = 0;
+    for (const [s, e] of keptSegments()) {
+      if (t < s) return acc;
+      if (t <= e) return acc + (t - s);
+      acc += e - s;
+    }
+    return acc;
+  };
+
+  const movePlayhead = () => {
+    const head = $("wavePlayhead");
+    if (!peaksData || !cutRegions.length) return;
+    const dur = peaksData.duration || 1;
+    const shown = cutRegions.length ? editedToOriginal(video.currentTime)
+                                    : video.currentTime;
+    head.style.left = `${Math.min(100, (shown / dur) * 100)}%`;
+  };
+  video.addEventListener("timeupdate", movePlayhead);
+
+  // clicking the strip seeks, using the same mapping in reverse
+  $("waveStrip").addEventListener("click", (e) => {
+    if (!peaksData) return;
+    const wrap = document.querySelector(".wavewrap");
+    const rect = wrap.getBoundingClientRect();
+    if (e.clientX < rect.left || e.clientX > rect.right) return;
+    const frac = (e.clientX - rect.left) / rect.width;
+    const original = frac * (peaksData.duration || 0);
+    video.currentTime = cutRegions.length ? originalToEdited(original) : original;
+  });
 
   const loadPeaks = async () => {
     if (peaksData) return peaksData;

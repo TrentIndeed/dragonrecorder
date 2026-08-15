@@ -33,14 +33,6 @@
     </div>
   </header>
 
-  <!-- waveform of the original take, with the removed parts shaded; shown
-       only when a cut edit is switched on -->
-  <div class="wavestrip" id="waveStrip" hidden>
-    <canvas id="waveCanvas" height="56"></canvas>
-    <div class="wavelegend">
-      <span class="swatch cut"></span><span id="waveNote">removed</span>
-    </div>
-  </div>
 
   <div class="layout">
   <div class="left">
@@ -101,6 +93,18 @@
     {% if r.title_is_ai %}<div class="aihint">Description generated from the transcript</div>{% endif %}
   </div>
   {% endif %}
+
+  <!-- waveform of the original take with the removed parts shaded, plus a
+       playhead that tracks the video; only shown when a cut edit is on -->
+  <div class="wavestrip" id="waveStrip" hidden>
+    <div class="wavewrap">
+      <canvas id="waveCanvas" height="56"></canvas>
+      <div class="playhead" id="wavePlayhead"></div>
+    </div>
+    <div class="wavelegend">
+      <span class="swatch cut"></span><span id="waveNote">removed</span>
+    </div>
+  </div>
   <div class="chapters" id="chapters" hidden>
     <h2>Chapters</h2>
     <div id="chapterList"></div>

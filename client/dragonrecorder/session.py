@@ -177,11 +177,14 @@ class Session:
                 log.exception("clipboard copy failed")
             self.ui.hide_toolbar()
             self.ui.hide_bubble()
-            # no bubble yet: capture is still finishing, and a restarting
-            # camera would paint its blank frames into the end of the take
-            self.ui.show_panel(with_bubble=False)
-            self.ui.set_panel_link(url)   # visible "link copied" confirmation
+            # Get out of the way when the take ends: no card, no bubble, just
+            # the recording open in the browser. The link is already on the
+            # clipboard and the tray toast confirms it.
+            self.ui.hide_panel()
             self.notify("Link copied", url)
+            if config.load_settings().get("open_after_record", True):
+                threading.Thread(target=self._open_in_browser, args=(url,),
+                                 daemon=True).start()
         threading.Thread(target=self._finish_and_upload, args=(rec, slug),
                          daemon=True).start()
 
@@ -234,8 +237,19 @@ class Session:
             log.exception("processing pipeline failed")
             api.report_failure(f"processing pipeline failed for {slug}")
 
+    def _open_in_browser(self, url: str) -> None:
+        import webbrowser
+        try:
+            webbrowser.open(url)
+        except Exception:
+            log.exception("could not open %s", url)
+
     def _restore_preview_bubble(self):
-        """Bring the webcam preview back once ffmpeg has let go."""
+        """Bring the webcam preview back — but only if the card is open.
+
+        After a normal stop the card is closed, so nothing comes back and the
+        screen is left to the browser.
+        """
         try:
             s = config.load_settings()
             if s["camera"] and getattr(self.ui, "_panel_visible", False):

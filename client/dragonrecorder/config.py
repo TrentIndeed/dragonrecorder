@@ -57,6 +57,8 @@ DEFAULT_SETTINGS = {
     # late to ~125 ms, so the target is a small positive lag.
     "av_offset_ms": 215,
     "start_sound": True,   # audible cue when capture actually begins
+    # after a take: close the recorder UI and open the video in the browser
+    "open_after_record": True,
     "bubble_x": None,      # remembered bubble position
     "bubble_y": None,
 }

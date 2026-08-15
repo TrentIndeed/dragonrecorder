@@ -117,6 +117,23 @@
     drawFrameTo(c, CW, CH);
   }
 
+  // The segmenter runs on the WHOLE camera frame, but the canvas shows a
+  // cover-crop of it. Drawing the mask stretched to the canvas therefore
+  // squashed it against the image — for a 16:9 camera in a square bubble by
+  // 1.78x horizontally — so the mask edge sat inside the face and the sides
+  // of the head were blurred. The mask has to be cropped exactly like the
+  // frame it belongs to.
+  function drawMaskTo(c, src, mw, mh) {
+    const vw = video.videoWidth, vh = video.videoHeight;
+    if (!vw) return;
+    const scale = Math.max(CW / vw, CH / vh);
+    const sw = CW / scale, sh = CH / scale;      // crop rect, in video pixels
+    const kx = mw / vw, ky = mh / vh;            // video pixels -> mask pixels
+    c.drawImage(src,
+                ((vw - sw) / 2) * kx, ((vh - sh) / 2) * ky, sw * kx, sh * ky,
+                0, 0, CW, CH);
+  }
+
   // Mask post-processing. The raw mask flickers frame to frame, which reads
   // as a shimmering halo, so it is smoothed over time; the alpha ramp is
   // kept narrow so the person's edge stays crisp instead of dissolving.
@@ -131,16 +148,18 @@
   const DILATE = 3;          // mask pixels to grow the person by
 
   function drawBlurred(result) {
-    // Background blur: downscale once, blur lightly, scale back. Blurring a
-    // quarter-size image already widens the effective radius 4x, so the
-    // radius used here is a fraction of the setting — the previous version
-    // blurred at both stages and turned the background to soup.
-    const bw = Math.max(32, Math.round(CW / 3));
-    const bh = Math.max(32, Math.round(CH / 3));
+    // Background blur at the radius that was actually asked for. Downscaling
+    // blurs on its own — a 1/3-size round trip softens the image about as
+    // much as a 3px blur before the filter even runs — so the old version
+    // made "2" look like a heavy blur. Only large radii downscale now, and
+    // the filter is scaled to compensate.
+    const shrink = blurPx > 6 ? 2 : 1;
+    const bw = Math.max(32, Math.round(CW / shrink));
+    const bh = Math.max(32, Math.round(CH / shrink));
     if (smallCanvas.width !== bw) { smallCanvas.width = bw; smallCanvas.height = bh; }
     smallCtx.filter = "none";
     drawFrameTo(smallCtx, bw, bh);
-    blurCtx.filter = `blur(${Math.max(1, blurPx / 3)}px)`;
+    blurCtx.filter = `blur(${Math.max(0.5, blurPx / shrink)}px)`;
     blurCtx.drawImage(smallCanvas, 0, 0, bw, bh, 0, 0, CW, CH);
     blurCtx.filter = "none";
 
@@ -190,7 +209,7 @@
     personCtx.globalCompositeOperation = "destination-in";
     // just enough feather to hide mask pixelation at this scale
     personCtx.filter = `blur(${Math.max(1, CW / 260)}px)`;
-    personCtx.drawImage(dilateCanvas, 0, 0, CW, CH);
+    drawMaskTo(personCtx, dilateCanvas, mw, mh);
     personCtx.filter = "none";
     personCtx.globalCompositeOperation = "source-over";
 
