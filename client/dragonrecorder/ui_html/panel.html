@@ -128,6 +128,8 @@
     color: var(--muted); font: 12px system-ui;
   }
   .tunerow:hover { background: var(--row); color: var(--text); }
+  /* an author display rule beats the UA [hidden] rule — say it explicitly */
+  .tunerow[hidden] { display: none; }
   .tunerow input[type="range"] {
     margin-left: auto; width: 92px; accent-color: var(--ai);
   }
