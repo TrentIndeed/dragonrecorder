@@ -104,6 +104,7 @@ class PanelApi:
         old_shape = cur.get("bubble_shape", "rect")
         old_mic = cur["mic"]
         old_strength = cur.get("blur_strength", 6)
+        old_scale = cur.get("bubble_scale", 100)
         cur.update({k: s[k] for k in config.PANEL_KEYS if k in s})
         if "mic" in s and s["mic"] != old_mic:
             # an explicit pick in the card stops the follow-the-default logic
@@ -120,7 +121,8 @@ class PanelApi:
                 # card + webcam follow the chosen screen
                 ov.show_panel()
                 return
-            shape_changed = cur.get("bubble_shape", "rect") != old_shape
+            shape_changed = (cur.get("bubble_shape", "rect") != old_shape
+                             or cur.get("bubble_scale", 100) != old_scale)
             if cur["camera"] != old_cam or shape_changed:
                 ov.hide_bubble()
                 if cur["camera"]:
@@ -257,15 +259,6 @@ class App:
 
     # ---- background workers ----
 
-    def render_job_loop(self):
-        from . import processing
-        while True:
-            time.sleep(60)
-            try:
-                processing.poll_render_jobs()
-            except Exception:
-                log.exception("render job poll failed")
-
     def cleanup_old_takes(self):
         cutoff = time.time() - LOCAL_KEEP_DAYS * 86400
         for d in config.RECORDINGS_DIR.iterdir():
@@ -310,15 +303,14 @@ class App:
                 log.exception("mic auto-pick failed")
         threading.Thread(target=auto_mic, daemon=True).start()
         threading.Thread(target=self.run_tray, daemon=True).start()
-        threading.Thread(target=self.render_job_loop, daemon=True).start()
         threading.Thread(target=self.cleanup_old_takes, daemon=True).start()
         # web dashboard "Record a video" button → open the launcher panel
         from . import bridge
 
         def render_now():
-            from . import processing
-            threading.Thread(target=processing.poll_render_jobs,
-                             daemon=True).start()
+            # kept so older player pages that poke this endpoint still get a
+            # 200; the server renders cut edits itself now
+            log.debug("render poke ignored — the server renders edits")
         bridge.start(self.overlays.show_panel, self.overlays.hide_panel,
                      lambda: {"state": self.session.state.name,
                               "pid": os.getpid()},

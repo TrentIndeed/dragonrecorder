@@ -47,6 +47,7 @@ DEFAULT_SETTINGS = {
     "blur": False,
     "blur_strength": 6,    # background blur radius in px (2-16)
     "bubble_shape": "rect",   # "rect" (rounded rectangle) or "circle"
+    "bubble_scale": 100,   # camera bubble size, percent (50-160)
     "fps": 30,
     "start_sound": True,   # audible cue when capture actually begins
     "bubble_x": None,      # remembered bubble position
@@ -55,7 +56,8 @@ DEFAULT_SETTINGS = {
 # every settings key the panel is allowed to write (keeps a malformed or
 # stale payload from clobbering unrelated state like bubble_x)
 PANEL_KEYS = ("monitor", "camera", "mic", "blur", "bubble_shape",
-              "blur_strength", "mic_denoise", "start_sound", "fps")
+              "blur_strength", "bubble_scale", "mic_denoise", "start_sound",
+              "fps")
 
 
 def load_settings() -> dict:

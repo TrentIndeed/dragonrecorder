@@ -50,33 +50,78 @@ def _nvenc_available() -> bool:
         return False
 
 
-def audio_filters(denoise: bool = True) -> str:
-    """Make raw mic capture sound like a finished video's audio.
+def capture_audio_filter() -> str:
+    """The ONLY audio work allowed during live capture: fold to mono.
 
     Interfaces like the SSL 2 present two input channels and put the mic on
     channel 1, so a straight stereo capture is voice-in-one-ear at half the
-    perceived level (measured on a real take: ch1 RMS -32 dB, ch2 -84 dB,
-    integrated -22.9 LUFS against a -16 LUFS web target). Summing to mono
-    fixes the channel, then loudnorm brings the level up to broadcast target
-    and tames the 29 LU dynamic range that made quiet speech disappear.
+    perceived level (measured: ch1 RMS -32 dB, ch2 -84 dB). Summing rather
+    than averaging keeps the full level.
+
+    Everything else — hum filter, denoise, loudness — happens after the take
+    in clean_audio(). Benchmarked over 8s captures on this machine:
+
+        no filter          30 fps, 0 dropped
+        mono fold          30 fps, 0 dropped
+        + loudnorm        8.7 fps, 44 dropped, 0.87x realtime
+
+    loudnorm resamples internally to 192 kHz and buffers for lookahead; in
+    a live graph that starves the capture and the whole recording judders.
     """
-    chain = [
-        # sum, don't average: averaging a mic that only feeds ch1 costs 6 dB
-        "pan=mono|c0=c0+c1",
-        "highpass=f=80",            # mains hum, desk rumble, HVAC
-    ]
+    return "pan=mono|c0=c0+c1"
+
+
+def clean_audio(video: Path, denoise: bool = True) -> bool:
+    """Hum filter, denoise and loudness-normalise a finished take in place.
+
+    Runs offline with `-c:v copy`, so the video is never re-encoded and the
+    cost is a few seconds of audio processing. Two passes: measure, then
+    correct with those measurements, which hits the target properly (a
+    single pass undershot by 2.6 LU on a real take).
+    """
+    ff = config.find_ffmpeg()
+    chain = ["highpass=f=80"]
     if denoise:
         # FFT denoiser trained on the running noise floor — kills steady
         # hiss/hum without the underwater artifacts of aggressive gates
         chain.append("afftdn=nf=-25:tn=1")
-    chain += [
-        # aiming at -14 (YouTube's target) lands around -16 in practice:
-        # single-pass loudnorm is conservative, measured -18.6 when asked
-        # for -16 on a real take
-        "loudnorm=I=-14:TP=-1.5:LRA=11",
-        "alimiter=limit=0.95",             # catch transient overshoot
-    ]
-    return ",".join(chain)
+    target = "I=-16:TP=-1.5:LRA=11"
+
+    measured = None
+    try:
+        probe = subprocess.run(
+            [ff, "-hide_banner", "-i", str(video), "-af",
+             ",".join(chain + [f"loudnorm={target}:print_format=json"]),
+             "-f", "null", "-"],
+            capture_output=True, text=True, creationflags=CREATE_NO_WINDOW,
+            timeout=600)
+        blob = probe.stderr[probe.stderr.rfind("{"):probe.stderr.rfind("}") + 1]
+        measured = json.loads(blob)
+    except Exception:
+        log.warning("loudness measurement failed, using single-pass",
+                    exc_info=True)
+
+    norm = f"loudnorm={target}"
+    if measured:
+        norm += (f":measured_I={measured['input_i']}"
+                 f":measured_TP={measured['input_tp']}"
+                 f":measured_LRA={measured['input_lra']}"
+                 f":measured_thresh={measured['input_thresh']}"
+                 f":offset={measured['target_offset']}:linear=true")
+    out = video.with_name("clean.mp4")
+    r = subprocess.run(
+        [ff, "-hide_banner", "-y", "-i", str(video), "-c:v", "copy",
+         "-af", ",".join(chain + [norm, "alimiter=limit=0.95"]),
+         "-c:a", "aac", "-b:a", "160k", "-ar", "48000",
+         "-movflags", "+faststart", str(out)],
+        capture_output=True, creationflags=CREATE_NO_WINDOW, timeout=900)
+    if r.returncode != 0 or not out.exists() or out.stat().st_size == 0:
+        log.error("audio cleanup failed: %s",
+                  r.stderr.decode(errors="replace")[-400:])
+        out.unlink(missing_ok=True)
+        return False
+    out.replace(video)
+    return True
 
 
 class Recorder:
@@ -128,7 +173,7 @@ class Recorder:
                 "-pix_fmt", "yuv420p",
             ]
         if self.mic:
-            cmd += ["-af", audio_filters(self.denoise),
+            cmd += ["-af", capture_audio_filter(),
                     "-c:a", "aac", "-b:a", "160k", "-ac", "1"]
         cmd += ["-movflags", "+faststart", str(out)]
         return cmd

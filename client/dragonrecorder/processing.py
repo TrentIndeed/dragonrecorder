@@ -19,7 +19,7 @@ import subprocess
 from pathlib import Path
 
 from . import api, captions, config, recorder
-from .edits_render import _has_audio, render_cuts
+from .edits_render import _has_audio
 
 log = logging.getLogger("dr.processing")
 CREATE_NO_WINDOW = 0x08000000
@@ -413,45 +413,5 @@ def run_pipeline(slug: str, video: Path) -> None:
     api.register_edit(slug, "captions", n_cues,
                       bool(auto.get("captions") and n_cues))
 
-    # 5. derived renders for the enabled cut set
-    enabled = sorted(k for k in ("fillers", "silences")
-                     if auto.get(k) and detections[k])
-    if enabled:
-        produce_render(slug, video, detections, enabled)
-
-
-def produce_render(slug: str, video: Path, detections: dict,
-                   kinds: list[str]) -> None:
-    cuts = sorted(c for k in kinds for c in detections.get(k, []))
-    if not cuts:
-        return
-    name = "cut_" + "+".join(sorted(kinds)) + ".mp4"
-    out = video.with_name(name)
-    try:
-        render_cuts(video, out, cuts)
-        api.upload_asset(slug, name.removesuffix(".mp4"), out)
-    except Exception:
-        log.exception("render %s failed", name)
-        api.report_failure(f"derived render {name} failed for {slug}")
-
-
-def poll_render_jobs() -> None:
-    """Dashboard toggles can request renders after the fact; the local take
-    dir still has the original and the detection lists."""
-    for job in api.get_render_jobs():
-        slug, kinds = job["slug"], job["kinds"]
-        take = _find_local_take(slug)
-        if take is None:
-            log.info("render job for %s but no local take", slug)
-            continue
-        detections = json.loads((take / "detect.json").read_text("utf-8"))
-        produce_render(slug, take / "video.mp4", detections, kinds)
-
-
-def _find_local_take(slug: str) -> Path | None:
-    for d in config.RECORDINGS_DIR.iterdir():
-        marker = d / "slug.txt"
-        if marker.exists() and marker.read_text().strip() == slug \
-                and (d / "video.mp4").exists() and (d / "detect.json").exists():
-            return d
-    return None
+    # Cut renders are the server's job now — it has the source video and the
+    # cut lists above, so toggles keep working with this app closed.

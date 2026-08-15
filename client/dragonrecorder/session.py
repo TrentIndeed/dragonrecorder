@@ -107,6 +107,12 @@ class Session:
             if self._countdown_cancel.is_set():
                 return
             settings = config.load_settings()
+            # Ding BEFORE ffmpeg opens the mic, and let it finish: played
+            # after capture starts, the speakers bleed into the recording
+            # (and post-processing then normalises it up).
+            if settings.get("start_sound", True):
+                sounds.play("start.wav")
+                time.sleep(0.28)
             try:
                 self.rec.start_segment()
             except recorder.FfmpegDied as exc:
@@ -119,10 +125,6 @@ class Session:
                 self._release_slug_async()
                 return
             self.state = State.RECORDING
-            # ding only once capture is actually running, so it confirms the
-            # take started rather than that a hotkey was pressed
-            if settings.get("start_sound", True):
-                sounds.play("start.wav")
             self.ui.show_toolbar(settings["monitor"])
             if settings["camera"]:
                 self.ui.show_bubble(settings["monitor"], settings["camera"],
@@ -183,6 +185,9 @@ class Session:
     def _finish_and_upload(self, rec: recorder.Recorder, slug: str):
         try:
             final = rec.finish()
+            # loudness/denoise work that would wreck live capture happens
+            # here instead, before the file goes up
+            recorder.clean_audio(final, denoise=rec.denoise)
         except recorder.FfmpegDied as exc:
             log.error("finish failed: %s", exc)
             self.notify("Recording failed", "No video was produced.")

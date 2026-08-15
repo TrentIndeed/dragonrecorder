@@ -36,6 +36,7 @@ S = _dpi_scale()
 TOOLBAR_W, TOOLBAR_H = int(60 * S), int(430 * S)
 BUBBLE = int(358 * S)                       # circle shape (square window)
 BUBBLE_RECT_W, BUBBLE_RECT_H = int(488 * S), int(274 * S)   # 16:9 fallback
+SHADOW_PAD = 10          # transparent margin the bubble's drop shadow needs
 COUNTDOWN = int(180 * S)
 PANEL_W, PANEL_H = int(336 * S), int(710 * S)   # tall enough for the tune rows
 PANEL_MARGIN = int(14 * S)
@@ -287,6 +288,14 @@ class Overlays:
         else:
             w, h = BUBBLE_RECT_W, BUBBLE_RECT_H
             css_w, css_h = 488, 274
+        # user-set camera size (50-160%), and the margin the CSS drop shadow
+        # needs — the window has to be bigger than the visible shape or the
+        # shadow is clipped off at its edge
+        scale = max(50, min(160, int(s.get("bubble_scale", 100)))) / 100.0
+        w, h = int(w * scale), int(h * scale)
+        css_w, css_h = int(css_w * scale), int(css_h * scale)
+        w, h = w + 2 * SHADOW_PAD, h + 2 * SHADOW_PAD
+        css_w, css_h = css_w + 2 * SHADOW_PAD, css_h + 2 * SHADOW_PAD
         geo = devices.monitor_geometry(monitor)
         m = int(32 * S)
         x = s["bubble_x"] if s["bubble_x"] is not None else geo["left"] + m

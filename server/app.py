@@ -17,6 +17,7 @@ from fastapi.templating import Jinja2Templates
 import auth
 import config
 import db
+import render
 from notify import send_telegram
 
 log = logging.getLogger("dragonrecorder")
@@ -209,13 +210,20 @@ async def register_edit(slug: str, request: Request):
             (slug, kind, int(body.get("count", 0)), int(body.get("enabled", False)),
              json.dumps(body.get("data")) if body.get("data") is not None else None),
         )
+    render.wake.set()   # auto-applied edits render as soon as detection lands
     return {"ok": True}
 
 
 @app.get("/api/render-jobs", dependencies=[Depends(require_token)])
 def render_jobs():
-    """Cut-edit combos toggled on (from the dashboard) whose render hasn't been
-    uploaded yet. The client tray polls this and produces the renders."""
+    """Legacy: renders happen on this box now (see render.py).
+
+    Older clients still poll here; handing them an empty list keeps them from
+    duplicating work the server is already doing. It only falls back to the
+    client if this image somehow has no ffmpeg.
+    """
+    if render.available():
+        return {"jobs": []}
     jobs = []
     with db.connect() as dbc:
         rows = dbc.execute(
@@ -630,6 +638,7 @@ async def dash_toggle_edit(slug: str, kind: str, request: Request):
             raise HTTPException(404, "edit not detected for this recording")
         dbc.execute("UPDATE edits SET enabled=? WHERE slug=? AND kind=?",
                     (enabled, slug, kind))
+    render.wake.set()   # apply the toggle now, not at the next poll
     return {"ok": True}
 
 
@@ -724,3 +733,4 @@ def reap():
 async def startup():
     db.init_db()
     asyncio.create_task(reaper_loop())
+    render.start()

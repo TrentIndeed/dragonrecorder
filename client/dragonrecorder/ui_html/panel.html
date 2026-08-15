@@ -200,6 +200,11 @@
       <span>Clean up mic audio</span>
       <input type="checkbox" id="denoise">
     </label>
+    <label class="tunerow" id="camSizeRow" title="How big the camera bubble is">
+      <span>Camera size</span>
+      <input type="range" id="camSize" min="50" max="160" step="5">
+      <span class="num" id="camSizeVal">100</span>
+    </label>
     <label class="tunerow" id="blurStrengthRow" hidden
            title="How hard the background behind you is blurred">
       <span>Blur strength</span>
@@ -324,6 +329,8 @@
     renderShape();
     $("denoise").checked = info.settings.mic_denoise !== false;
     $("blurStrength").value = info.settings.blur_strength ?? 6;
+    $("camSize").value = info.settings.bubble_scale ?? 100;
+    $("camSizeVal").textContent = $("camSize").value;
     renderBlurStrength();
     updateBadges();
     if (!info.token_ok) {
@@ -344,6 +351,7 @@
       blur: $("blur").classList.contains("on"),
       bubble_shape: shape,
       blur_strength: parseInt($("blurStrength").value, 10),
+      bubble_scale: parseInt($("camSize").value, 10),
       mic_denoise: $("denoise").checked,
     }), 150);
   }
@@ -374,6 +382,11 @@
     $("blurStrengthVal").textContent = $("blurStrength").value;
     save();
   });
+  // resizing recreates the bubble window, so only fire when the drag ends
+  $("camSize").addEventListener("input", () => {
+    $("camSizeVal").textContent = $("camSize").value;
+  });
+  $("camSize").addEventListener("change", save);
   $("denoise").addEventListener("change", save);
   $("shape").addEventListener("click", () => {
     shape = shape === "rect" ? "circle" : "rect";
