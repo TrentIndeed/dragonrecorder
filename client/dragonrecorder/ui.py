@@ -141,7 +141,7 @@ class Overlays:
         return (geo["left"] + geo["width"] - PANEL_W - PANEL_MARGIN,
                 geo["top"] + PANEL_MARGIN)
 
-    def show_panel(self):
+    def show_panel(self, with_bubble: bool = True):
         if self.panel:
             x, y = self._panel_pos()
             self.panel.show()
@@ -154,9 +154,13 @@ class Overlays:
                 pass
             self._panel_visible = True
             # Loom behavior: opening the capture panel also shows the webcam
-            # preview bubble bottom-left, before any recording starts
+            # preview bubble bottom-left, before any recording starts.
+            # Suppressed when the card comes back at the END of a take —
+            # ffmpeg is still writing for a moment, and a just-restarted
+            # bubble would put its blank first frames on the last frames of
+            # the recording.
             s = config.load_settings()
-            if s["camera"]:
+            if with_bubble and s["camera"]:
                 self.show_bubble(s["monitor"], s["camera"], s["blur"])
 
     def hide_panel(self, keep_bubble: bool = False):

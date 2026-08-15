@@ -233,7 +233,9 @@
     running = false;
     if (stream) stream.getTracks().forEach((t) => t.stop());
     stream = null;
-    ctx.clearRect(0, 0, CW, CH);
+    // deliberately NOT clearing the canvas: the last frame stays painted, so
+    // reopening the card shows the picture immediately instead of a black
+    // disc while the camera spins up
   };
 </script>
 <script>

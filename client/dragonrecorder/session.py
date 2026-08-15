@@ -177,7 +177,9 @@ class Session:
                 log.exception("clipboard copy failed")
             self.ui.hide_toolbar()
             self.ui.hide_bubble()
-            self.ui.show_panel()   # ready for the next take, Loom-style
+            # no bubble yet: capture is still finishing, and a restarting
+            # camera would paint its blank frames into the end of the take
+            self.ui.show_panel(with_bubble=False)
             self.ui.set_panel_link(url)   # visible "link copied" confirmation
             self.notify("Link copied", url)
         threading.Thread(target=self._finish_and_upload, args=(rec, slug),
@@ -186,6 +188,8 @@ class Session:
     def _finish_and_upload(self, rec: recorder.Recorder, slug: str):
         try:
             final = rec.finish()
+            # capture is closed now, so the preview bubble can come back
+            self._restore_preview_bubble()
             # loudness/denoise work that would wreck live capture happens
             # here instead, before the file goes up
             recorder.clean_audio(final, denoise=rec.denoise)
@@ -229,6 +233,15 @@ class Session:
         except Exception:
             log.exception("processing pipeline failed")
             api.report_failure(f"processing pipeline failed for {slug}")
+
+    def _restore_preview_bubble(self):
+        """Bring the webcam preview back once ffmpeg has let go."""
+        try:
+            s = config.load_settings()
+            if s["camera"] and getattr(self.ui, "_panel_visible", False):
+                self.ui.show_bubble(s["monitor"], s["camera"], s["blur"])
+        except Exception:
+            log.exception("could not restore the preview bubble")
 
     def trash(self):
         """Kill the take: no link, no upload, slug released, files deleted."""
