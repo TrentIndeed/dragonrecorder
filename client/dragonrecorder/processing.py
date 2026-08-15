@@ -28,7 +28,14 @@ FILLERS = {"um", "umm", "ummm", "uh", "uhh", "uhm", "ah", "ahh", "er", "erm",
            "hmm", "hm", "mhm", "mm", "like"}
 FILLER_BIGRAMS = {("you", "know"), ("i", "mean"), ("sort", "of"), ("kind", "of")}
 MIN_SILENCE_S = 1.0
-CUT_PAD_S = 0.05
+# Two different jobs, so two constants. For a silence the pad SHRINKS the
+# cut, and it has to be generous: whisper's segment ends land early (its VAD
+# trims the decay of the last word), so a 50 ms margin was slicing the tail
+# off whatever was said before the pause. For a filler the pad GROWS the
+# cut, so it stays tight or it eats the neighbouring words.
+SILENCE_PAD_S = 0.25
+FILLER_PAD_S = 0.05
+MIN_CUT_S = 0.30          # not worth a splice below this
 
 _model = None
 _model_cpu_only = False
@@ -91,19 +98,42 @@ def _transcribe_with(model, wav: Path) -> dict:
             "text": " ".join(s["text"] for s in segments)}
 
 
-def detect_silences(segments: list[dict], duration: float) -> list[list[float]]:
-    """Gap-based, as in dragonEditor: inter-segment gaps over threshold."""
+def detect_silences(segments: list[dict], duration: float,
+                    words: list[dict] | None = None) -> list[list[float]]:
+    """Gap-based, as in dragonEditor: inter-segment gaps over threshold.
+
+    Word timings bound the cut when they are available — they are tighter
+    than segment boundaries, so less speech is at risk of being clipped.
+    """
     cuts = []
     if not segments:
         return cuts
+
+    def last_word_end_before(t: float) -> float:
+        """End of the last word at or before t, for a safer cut-in point."""
+        if not words:
+            return t
+        ends = [w["end"] for w in words if w["end"] <= t + 0.001]
+        return max(ends) if ends else t
+
+    def first_word_start_after(t: float) -> float:
+        if not words:
+            return t
+        starts = [w["start"] for w in words if w["start"] >= t - 0.001]
+        return min(starts) if starts else t
+
+    def add(start: float, end: float) -> None:
+        if end - start >= MIN_CUT_S:
+            cuts.append([round(max(0.0, start), 3), round(end, 3)])
+
     if segments[0]["start"] > MIN_SILENCE_S:
-        cuts.append([0.0, segments[0]["start"] - CUT_PAD_S])
+        add(0.0, first_word_start_after(segments[0]["start"]) - SILENCE_PAD_S)
     for a, b in zip(segments, segments[1:]):
-        gap = b["start"] - a["end"]
-        if gap > MIN_SILENCE_S:
-            cuts.append([a["end"] + CUT_PAD_S, b["start"] - CUT_PAD_S])
+        if b["start"] - a["end"] > MIN_SILENCE_S:
+            add(last_word_end_before(a["end"]) + SILENCE_PAD_S,
+                first_word_start_after(b["start"]) - SILENCE_PAD_S)
     if duration and duration - segments[-1]["end"] > MIN_SILENCE_S:
-        cuts.append([segments[-1]["end"] + CUT_PAD_S, duration])
+        add(last_word_end_before(segments[-1]["end"]) + SILENCE_PAD_S, duration)
     return cuts
 
 
@@ -113,13 +143,13 @@ def detect_fillers(words: list[dict]) -> list[list[float]]:
     cuts, i = [], 0
     while i < len(clean):
         if i + 1 < len(clean) and (clean[i], clean[i + 1]) in FILLER_BIGRAMS:
-            cuts.append([max(0, words[i]["start"] - CUT_PAD_S),
-                         words[i + 1]["end"] + CUT_PAD_S])
+            cuts.append([max(0, words[i]["start"] - FILLER_PAD_S),
+                         words[i + 1]["end"] + FILLER_PAD_S])
             i += 2
             continue
         if clean[i] in FILLERS:
-            cuts.append([max(0, words[i]["start"] - CUT_PAD_S),
-                         words[i]["end"] + CUT_PAD_S])
+            cuts.append([max(0, words[i]["start"] - FILLER_PAD_S),
+                         words[i]["end"] + FILLER_PAD_S])
         i += 1
     return cuts
 
@@ -404,7 +434,7 @@ def run_pipeline(slug: str, video: Path) -> None:
     # 4. edit detection — always registered, even at count 0, so the panel
     #    can show "0 found" (proof the detector ran) instead of hiding it
     auto = api.get_auto_apply()
-    silence_cuts = detect_silences(tr["segments"], duration)
+    silence_cuts = detect_silences(tr["segments"], duration, tr["words"])
     filler_cuts = detect_fillers(tr["words"])
     detections = {
         "fillers": filler_cuts,

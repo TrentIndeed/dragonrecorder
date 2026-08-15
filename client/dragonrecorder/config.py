@@ -49,9 +49,13 @@ DEFAULT_SETTINGS = {
     "bubble_shape": "rect",   # "rect" (rounded rectangle) or "circle"
     "bubble_scale": 80,    # camera bubble size, percent (50-160)
     "fps": 30,
-    # how far ahead of the video the mic runs, in ms — see recorder._cmd.
-    # Re-measure per machine with tools/measure_av_sync.py.
-    "av_offset_ms": 260,
+    # How far ahead of the video the mic runs, in ms — see recorder._cmd.
+    # 215, not the 260 the probe suggested: the probe plays its tone through
+    # the speakers, so its reading includes ~40 ms of output latency and a
+    # "perfect" measurement actually leaves audio running slightly early.
+    # Ears notice audio arriving early at ~45 ms but tolerate it arriving
+    # late to ~125 ms, so the target is a small positive lag.
+    "av_offset_ms": 215,
     "start_sound": True,   # audible cue when capture actually begins
     "bubble_x": None,      # remembered bubble position
     "bubble_y": None,

@@ -83,14 +83,19 @@
           "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs");
         const files = await vision.FilesetResolver.forVisionTasks(
           "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm");
+        // Multiclass model, not the binary selfie segmenter: it labels hair,
+        // face-skin, body-skin, clothes and accessories separately, which is
+        // what makes the outline follow a head of hair instead of cutting
+        // through it. Person = anything that is not the background class.
         segmenter = await vision.ImageSegmenter.createFromOptions(files, {
           baseOptions: {
             modelAssetPath:
-              "https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/latest/selfie_segmenter.tflite",
+              "https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_multiclass_256x256/float32/latest/selfie_multiclass_256x256.tflite",
             delegate: "GPU",
           },
           runningMode: "VIDEO",
-          outputConfidenceMasks: true,
+          outputCategoryMask: true,
+          outputConfidenceMasks: false,
         });
         return segmenter;
       })();
@@ -110,54 +115,55 @@
     drawFrameTo(c, CW, CH);
   }
 
-  // Mask post-processing. The raw confidence mask is noisy frame to frame,
-  // which showed up as a shimmering halo around the head; smoothing it over
-  // time and hardening the middle of the curve is what makes the cutout
-  // look stable rather than "AI-ish".
-  let prevConf = null;
-  const SMOOTH = 0.55;       // how much of the previous frame's mask to keep
-  const LO = 0.35, HI = 0.65;   // confidences below/above these snap to 0/1
+  // Mask post-processing. The raw mask flickers frame to frame, which reads
+  // as a shimmering halo, so it is smoothed over time; the alpha ramp is
+  // kept narrow so the person's edge stays crisp instead of dissolving.
+  let prevMask = null;
+  const SMOOTH = 0.6;        // share of the previous frame's mask retained
+  const EDGE = 0.5;          // alpha midpoint
 
   function drawBlurred(result) {
-    // background: blurred, and scaled down first so the blur is smooth and
-    // cheap instead of a wide, banded filter over a big canvas
-    const bw = Math.max(24, Math.round(CW / 4));
-    const bh = Math.max(24, Math.round(CH / 4));
+    // Background blur: downscale once, blur lightly, scale back. Blurring a
+    // quarter-size image already widens the effective radius 4x, so the
+    // radius used here is a fraction of the setting — the previous version
+    // blurred at both stages and turned the background to soup.
+    const bw = Math.max(32, Math.round(CW / 3));
+    const bh = Math.max(32, Math.round(CH / 3));
     if (smallCanvas.width !== bw) { smallCanvas.width = bw; smallCanvas.height = bh; }
-    smallCtx.filter = `blur(${Math.max(1, blurPx / 4)}px)`;
-    drawFrameTo(smallCtx, bw, bh);
     smallCtx.filter = "none";
-    blurCtx.filter = `blur(${Math.max(1, blurPx / 2)}px)`;
+    drawFrameTo(smallCtx, bw, bh);
+    blurCtx.filter = `blur(${Math.max(1, blurPx / 3)}px)`;
     blurCtx.drawImage(smallCanvas, 0, 0, bw, bh, 0, 0, CW, CH);
     blurCtx.filter = "none";
 
     drawFrame(personCtx);
-    const mask = result.confidenceMasks[0];
-    const conf = mask.getAsFloat32Array();
+    const mask = result.categoryMask;
+    if (!mask) { drawFrame(ctx); return; }
+    const cats = mask.getAsUint8Array();
     const mw = mask.width, mh = mask.height;
     if (!maskImageData || maskImageData.width !== mw) {
       maskImageData = new ImageData(mw, mh);
       maskCanvas.width = mw; maskCanvas.height = mh;
-      prevConf = null;
+      prevMask = null;
     }
-    if (!prevConf || prevConf.length !== conf.length) {
-      prevConf = new Float32Array(conf);
+    if (!prevMask || prevMask.length !== cats.length) {
+      prevMask = new Float32Array(cats.length);
     }
     const px = maskImageData.data;
-    for (let i = 0; i < conf.length; i++) {
-      // temporal smoothing kills the per-frame shimmer
-      const v = prevConf[i] * SMOOTH + conf[i] * (1 - SMOOTH);
-      prevConf[i] = v;
-      // then a steep ramp: confident areas go fully opaque or fully clear,
-      // leaving a soft edge only in the genuinely uncertain band
-      let a = (v - LO) / (HI - LO);
-      a = a < 0 ? 0 : a > 1 ? 1 : a * a * (3 - 2 * a);   // smoothstep
-      px[i * 4 + 3] = a * 255;
+    for (let i = 0; i < cats.length; i++) {
+      // category 0 is background; hair, skin, clothes and accessories are
+      // all "person", which is why this follows a hairline properly
+      const target = cats[i] === 0 ? 0 : 1;
+      const v = prevMask[i] * SMOOTH + target * (1 - SMOOTH);
+      prevMask[i] = v;
+      // narrow ramp around the midpoint: a definite edge, not a fade
+      let a = (v - EDGE) * 6 + 0.5;
+      px[i * 4 + 3] = (a < 0 ? 0 : a > 1 ? 1 : a) * 255;
     }
     maskCtx.putImageData(maskImageData, 0, 0);
     personCtx.globalCompositeOperation = "destination-in";
-    // feather proportional to the bubble, not a fixed 3px
-    personCtx.filter = `blur(${Math.max(1.5, CW / 160)}px)`;
+    // just enough feather to hide mask pixelation at this scale
+    personCtx.filter = `blur(${Math.max(1, CW / 260)}px)`;
     personCtx.drawImage(maskCanvas, 0, 0, CW, CH);
     personCtx.filter = "none";
     personCtx.globalCompositeOperation = "source-over";
