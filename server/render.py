@@ -155,20 +155,36 @@ def pending_jobs() -> list[dict]:
     return jobs
 
 
+MAX_ATTEMPTS = 3
+_failures: dict[str, int] = {}     # job key -> consecutive failures
+
+
 def run_job(job: dict) -> bool:
     slug, name = job["slug"], job["name"]
+    key = f"{slug}/{name}"
+    if _failures.get(key, 0) >= MAX_ATTEMPTS:
+        return False               # already told the operator; stop burning CPU
     src = config.DATA_DIR / slug / "video.mp4"
     if not src.exists():
         log.warning("render %s: source missing", slug)
+        _failures[key] = MAX_ATTEMPTS
         return False
     out = config.DATA_DIR / slug / name
     log.info("rendering %s -> %s (%d cuts)", slug, name, len(job["cuts"]))
     try:
         render_cuts(src, out, job["cuts"])
     except Exception as exc:
-        log.exception("render failed for %s", slug)
-        send_telegram(f"🎬 DragonRecorder: render failed for {slug} — {exc}")
+        # Without a cap this retries on every wake forever, re-encoding the
+        # whole video each time — one bad cut list would sit on the CPU of
+        # the box that also serves the player.
+        n = _failures[key] = _failures.get(key, 0) + 1
+        log.exception("render failed for %s (attempt %d/%d)", slug, n,
+                      MAX_ATTEMPTS)
+        if n >= MAX_ATTEMPTS:
+            send_telegram(f"🎬 DragonRecorder: giving up rendering {slug} "
+                          f"after {n} attempts - {exc}")
         return False
+    _failures.pop(key, None)
     with db.connect() as dbc:
         for kind in job["kinds"]:
             dbc.execute("UPDATE edits SET has_render=1 WHERE slug=? AND kind=?",

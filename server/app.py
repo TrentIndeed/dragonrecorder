@@ -1,6 +1,9 @@
 import asyncio
+import hmac
 import json
+import math
 import logging
+import re
 import secrets
 import shutil
 import string
@@ -50,8 +53,23 @@ def new_slug() -> str:
     return "".join(secrets.choice(SLUG_ALPHABET) for _ in range(10))
 
 
+SLUG_RE = re.compile(r"[A-Za-z0-9_-]{3,60}")
+
+
 def slug_dir(slug: str) -> Path:
-    return config.DATA_DIR / slug
+    """Data directory for a slug, refusing anything that isn't slug-shaped.
+
+    Routing already stops '..' reaching here, but every filesystem call in
+    this file goes through this one function — validating here means a slug
+    arriving from somewhere new (a body, a query, a future endpoint) can
+    never walk out of the data directory.
+    """
+    if not SLUG_RE.fullmatch(slug or ""):
+        raise HTTPException(400, "bad slug")
+    d = (config.DATA_DIR / slug).resolve()
+    if d.parent != config.DATA_DIR.resolve():
+        raise HTTPException(400, "bad slug")
+    return d
 
 
 def free_gb() -> float:
@@ -61,7 +79,10 @@ def free_gb() -> float:
 def require_token(authorization: str = Header(default="")) -> None:
     if not config.CAPTURE_TOKEN:
         raise HTTPException(503, "server has no CAPTURE_TOKEN configured")
-    if authorization != f"Bearer {config.CAPTURE_TOKEN}":
+    # constant-time: a plain != leaks how much of the token matched via
+    # response timing, and this is the only thing guarding upload/delete
+    if not hmac.compare_digest(authorization or "",
+                               f"Bearer {config.CAPTURE_TOKEN}"):
         raise HTTPException(401, "bad token")
 
 
@@ -355,8 +376,31 @@ def merge_ranges(ranges: list[list[float]]) -> list[list[float]]:
     return out
 
 
+MAX_RANGES = 500          # a viewer cannot store an unbounded blob on us
+
+
+async def json_body(request: Request) -> dict:
+    """Parse a request body that anyone on the internet can send.
+
+    Malformed input from a viewer should be a 400, never an unhandled 500.
+    """
+    try:
+        body = await request.json()
+    except ValueError:
+        raise HTTPException(400, "bad json")
+    if not isinstance(body, dict):
+        raise HTTPException(400, "bad body")
+    return body
+
+
 def e_ok(r) -> bool:
-    return isinstance(r, (list, tuple)) and len(r) == 2 and r[1] > r[0] >= 0
+    if not (isinstance(r, (list, tuple)) and len(r) == 2):
+        return False
+    try:
+        s, e = float(r[0]), float(r[1])
+    except (TypeError, ValueError):
+        return False
+    return math.isfinite(s) and math.isfinite(e) and e > s >= 0
 
 
 @app.post("/api/w/{slug}/progress")
@@ -364,10 +408,21 @@ async def progress(slug: str, request: Request,
                    dr_vid: str | None = Cookie(default=None)):
     if not dr_vid:
         return {"ok": False}
-    body = await request.json()
-    ranges = [r for r in body.get("ranges", []) if e_ok(r)]
-    plays = int(body.get("plays", 0))
+    body = await json_body(request)
+    # This is the one endpoint any viewer can post to unauthenticated, so
+    # everything it takes is bounded: garbage should be a 400, not a 500,
+    # and it must not be able to grow a row without limit.
+    ranges = [r for r in body.get("ranges", []) if e_ok(r)][:MAX_RANGES]
+    try:
+        plays = max(0, min(100, int(body.get("plays", 0) or 0)))
+    except (TypeError, ValueError):
+        plays = 0
     first_play = body.get("first_play_s")
+    try:
+        first_play = (None if first_play is None
+                      else max(0.0, min(86400.0, float(first_play))))
+    except (TypeError, ValueError):
+        first_play = None
     with db.connect() as dbc:
         row = dbc.execute("SELECT ranges, play_count, first_play_s, is_owner,"
                           " label, notified_at FROM views"
@@ -380,7 +435,7 @@ async def progress(slug: str, request: Request,
         max_pos = max([e for _, e in merged], default=0)
         fp = row["first_play_s"]
         if fp is None and first_play is not None:
-            fp = float(first_play)
+            fp = first_play
         dbc.execute(
             "UPDATE views SET ranges=?, watched_s=?, max_pos_s=?, last_seen=?,"
             " play_count=play_count+?, first_play_s=? WHERE slug=? AND viewer_id=?",
@@ -444,19 +499,23 @@ def heatmap(slug: str):
 @app.post("/api/w/{slug}/comments")
 async def add_comment(slug: str, request: Request,
                       dr_vid: str | None = Cookie(default=None)):
-    body = await request.json()
-    text = (body.get("body") or "").strip()[:2000]
+    body = await json_body(request)
+    text = str(body.get("body") or "").strip()[:2000]
     if not text:
         raise HTTPException(400, "empty comment")
-    author = (body.get("author") or "Anonymous").strip()[:80] or "Anonymous"
+    author = str(body.get("author") or "Anonymous").strip()[:80] or "Anonymous"
     at_s = body.get("at_s")
+    try:
+        at_s = (None if at_s is None
+                else max(0.0, min(86400.0, float(at_s))))
+    except (TypeError, ValueError):
+        at_s = None
     with db.connect() as dbc:
         get_recording(dbc, slug)
         cur = dbc.execute(
             "INSERT INTO comments (slug, viewer_id, author, body, at_s)"
             " VALUES (?,?,?,?,?)",
-            (slug, dr_vid or "anon", author, text,
-             float(at_s) if at_s is not None else None),
+            (slug, dr_vid or "anon", author, text, at_s),
         )
         row = dbc.execute("SELECT * FROM comments WHERE id=?",
                           (cur.lastrowid,)).fetchone()
@@ -466,7 +525,7 @@ async def add_comment(slug: str, request: Request,
 @app.post("/api/w/{slug}/reactions")
 async def toggle_reaction(slug: str, request: Request, response: Response,
                           dr_vid: str | None = Cookie(default=None)):
-    body = await request.json()
+    body = await json_body(request)
     emoji = body.get("emoji")
     if emoji not in REACTION_EMOJI:
         raise HTTPException(400, "unknown emoji")
@@ -628,10 +687,9 @@ async def dash_update(slug: str, request: Request):
 @app.post("/api/dash/recordings/{slug}/slug", dependencies=[Depends(require_dash)])
 async def dash_rename_slug(slug: str, request: Request):
     """Edit link: give a recording a custom vanity slug."""
-    import re as _re
     body = await request.json()
     new = str(body.get("slug", "")).strip()
-    if not _re.fullmatch(r"[A-Za-z0-9_-]{3,60}", new):
+    if not SLUG_RE.fullmatch(new):
         raise HTTPException(400, "use 3-60 letters, digits, - or _")
     with db.connect() as dbc:
         get_recording(dbc, slug)

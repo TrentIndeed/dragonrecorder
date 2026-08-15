@@ -498,67 +498,107 @@ def run_pipeline(slug: str, video: Path) -> None:
         api.set_meta(slug, title=heuristic_title(""), title_is_ai=False)
         return
 
-    api.set_meta(slug, transcript=tr["text"])
-    words_file = take_dir / "words.json"
-    words_file.write_text(json.dumps(tr["words"]), "utf-8")
-    api.upload_asset(slug, "words", words_file)
+    def step(name, fn, *a, **kw):
+        """One independent stage. A failure here costs that stage only.
 
-    # speaking pace → default playback speed for viewers
-    wpm = measure_wpm(tr["words"])
-    if wpm:
-        speed = best_speed(wpm)
-        log.info("speaking pace %.0f wpm -> default playback %.2gx", wpm, speed)
-        api.set_meta(slug, wpm=round(wpm, 1), default_speed=speed)
+        This used to be a straight run of statements, so a single unlucky
+        call — an AI helper, a thumbnail, even a log line that could not be
+        encoded — abandoned everything after it and the recording ended up
+        with no title, no captions and no edits at all.
+        """
+        try:
+            return fn(*a, **kw)
+        except Exception:
+            log.exception("pipeline step %r failed for %s", name, slug)
+            return None
+
+    step("transcript meta", api.set_meta, slug, transcript=tr["text"])
+    words_file = take_dir / "words.json"
+
+    def write_words():
+        words_file.write_text(json.dumps(tr["words"]), "utf-8")
+        api.upload_asset(slug, "words", words_file)
+    step("words", write_words)
+
+    # speaking pace -> default playback speed for viewers
+    def pace():
+        wpm = measure_wpm(tr["words"])
+        if wpm:
+            speed = best_speed(wpm)
+            log.info("speaking pace %.0f wpm -> default playback %.2gx",
+                     wpm, speed)
+            api.set_meta(slug, wpm=round(wpm, 1), default_speed=speed)
+    step("speaking pace", pace)
+
     vtt_file = take_dir / "captions.vtt"
-    n_cues = write_vtt(tr["segments"], vtt_file, tr["words"])
-    api.upload_asset(slug, "vtt", vtt_file)
+
+    def captions_step():
+        n = write_vtt(tr["segments"], vtt_file, tr["words"])
+        api.upload_asset(slug, "vtt", vtt_file)
+        return n
+    n_cues = step("captions", captions_step) or 0
 
     # 2. AI title + description
-    meta = ai_title(tr["text"])
-    if meta:
-        api.set_meta(slug, title=meta["title"],
-                     description=meta["description"], title_is_ai=True)
-    else:
-        api.set_meta(slug, title=heuristic_title(tr["text"]), title_is_ai=False)
+    def title_step():
+        meta = ai_title(tr["text"])
+        if meta:
+            api.set_meta(slug, title=meta["title"],
+                         description=meta["description"], title_is_ai=True)
+        else:
+            api.set_meta(slug, title=heuristic_title(tr["text"]),
+                         title_is_ai=False)
+    if step("title", title_step) is None and not tr["text"].strip():
+        pass    # nothing to title from; heuristic already covers it
 
     # 3. chapters + thumbnail
-    chapters = ai_chapters(tr["segments"], duration)
-    if chapters:
-        api.set_meta(slug, chapters=json.dumps(chapters))
-    thumb = make_thumbnail(video, duration)
-    if thumb:
-        api.upload_asset(slug, "thumb", thumb)
+    def chapters_step():
+        chapters = ai_chapters(tr["segments"], duration)
+        if chapters:
+            api.set_meta(slug, chapters=json.dumps(chapters))
+    step("chapters", chapters_step)
+
+    def thumb_step():
+        thumb = make_thumbnail(video, duration)
+        if thumb:
+            api.upload_asset(slug, "thumb", thumb)
+    step("thumbnail", thumb_step)
+
     # waveform for the strip that shows which parts the cuts remove
-    peaks = make_peaks(video, duration)
+    peaks = step("peaks", make_peaks, video, duration)
     if peaks:
-        api.upload_asset(slug, "peaks", peaks)
+        step("peaks upload", api.upload_asset, slug, "peaks", peaks)
 
     # 4. edit detection — always registered, even at count 0, so the panel
     #    can show "0 found" (proof the detector ran) instead of hiding it
-    auto = api.get_auto_apply()
-    silence_cuts = detect_silences(tr["segments"], duration, tr["words"])
+    auto = step("auto-apply settings", api.get_auto_apply) or {}
+    silence_cuts = step("silence detection", detect_silences,
+                        tr["segments"], duration, tr["words"]) or []
     # keep anything the waveform says is audible, whatever whisper thought
-    if peaks:
+    if peaks and silence_cuts:
         try:
             silence_cuts = refine_silences(
                 silence_cuts, json.loads(peaks.read_text("utf-8")))
         except (OSError, ValueError):
             log.warning("could not read peaks for silence refinement")
-    filler_cuts = detect_fillers(tr["words"])
+    filler_cuts = step("filler detection", detect_fillers, tr["words"]) or []
     detections = {
         "fillers": filler_cuts,
         "silences": silence_cuts,
     }
-    (take_dir / "detect.json").write_text(json.dumps(detections), "utf-8")
+    step("detect.json", (take_dir / "detect.json").write_text,
+         json.dumps(detections), "utf-8")
 
-    api.register_edit(slug, "fillers", len(filler_cuts),
-                      bool(auto.get("fillers") and filler_cuts),
-                      {"cuts": filler_cuts})
-    api.register_edit(slug, "silences", len(silence_cuts),
-                      bool(auto.get("silences") and silence_cuts),
-                      {"cuts": silence_cuts})
-    api.register_edit(slug, "captions", n_cues,
-                      bool(auto.get("captions") and n_cues))
+    # Registering the edits is what marks a recording "analyzed", so each
+    # one is its own step: losing the filler row must not also cost the
+    # captions row.
+    step("register fillers", api.register_edit, slug, "fillers",
+         len(filler_cuts), bool(auto.get("fillers") and filler_cuts),
+         {"cuts": filler_cuts})
+    step("register silences", api.register_edit, slug, "silences",
+         len(silence_cuts), bool(auto.get("silences") and silence_cuts),
+         {"cuts": silence_cuts})
+    step("register captions", api.register_edit, slug, "captions", n_cues,
+         bool(auto.get("captions") and n_cues))
 
     # Cut renders are the server's job now — it has the source video and the
     # cut lists above, so toggles keep working with this app closed.
