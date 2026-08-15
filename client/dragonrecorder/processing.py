@@ -196,7 +196,7 @@ def refine_silences(cuts: list[list[float]],
     refined = intersect(cuts, quiet, min_len=MIN_SILENCE_S)
     dropped = sum(e - s for s, e in cuts) - sum(e - s for s, e in refined)
     if dropped > 0.05:
-        log.info("silence cuts trimmed by %.1fs — that audio was not silent",
+        log.info("silence cuts trimmed by %.1fs - that audio was not silent",
                  dropped)
     return refined
 
@@ -473,7 +473,7 @@ def run_pipeline(slug: str, video: Path) -> None:
     if not _has_audio(video):
         # no mic on this take: no transcript to build on, but the viewer
         # still gets a thumbnail and the edit panel still shows its zeros
-        log.info("no audio stream — skipping transcription")
+        log.info("no audio stream - skipping transcription")
         thumb = make_thumbnail(video, duration)
         if thumb:
             api.upload_asset(slug, "thumb", thumb)
@@ -507,7 +507,7 @@ def run_pipeline(slug: str, video: Path) -> None:
     wpm = measure_wpm(tr["words"])
     if wpm:
         speed = best_speed(wpm)
-        log.info("speaking pace %.0f wpm → default playback %.2gx", wpm, speed)
+        log.info("speaking pace %.0f wpm -> default playback %.2gx", wpm, speed)
         api.set_meta(slug, wpm=round(wpm, 1), default_speed=speed)
     vtt_file = take_dir / "captions.vtt"
     n_cues = write_vtt(tr["segments"], vtt_file, tr["words"])

@@ -129,7 +129,7 @@ def clean_audio(video: Path, denoise: bool = True) -> bool:
             measured = vals
         else:
             silent = True
-            log.info("take has no measurable speech (%s LUFS) — skipping "
+            log.info("take has no measurable speech (%s LUFS) - skipping "
                      "loudness normalisation", raw.get("input_i"))
     except Exception:
         log.warning("loudness measurement failed, falling back to one pass",

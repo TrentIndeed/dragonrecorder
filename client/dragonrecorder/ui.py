@@ -320,7 +320,7 @@ class Overlays:
                     <= geo["top"] + geo["height"] - h // 2):
                 x, y = saved_x, saved_y
             else:
-                log.info("saved bubble position (%s,%s) is not on screen %d — "
+                log.info("saved bubble position (%s,%s) is not on screen %d - "
                          "resetting to the default corner", saved_x, saved_y,
                          monitor)
                 s["bubble_x"] = s["bubble_y"] = None
@@ -436,7 +436,7 @@ class Overlays:
             hwnd = winapi.find_window(title)
             if exclude and config.CAPTURE_EXCLUDE:
                 if not winapi.exclude_from_capture(hwnd):
-                    log.error("capture exclusion FAILED for %s — it would "
+                    log.error("capture exclusion FAILED for %s - it would "
                               "appear in recordings", title)
             elif exclude:
                 log.info("CAPTURE_EXCLUDE=0: %s will appear in recordings",

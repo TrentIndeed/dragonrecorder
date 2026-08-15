@@ -108,6 +108,19 @@ def get_render_jobs() -> list[dict]:
         return []
 
 
+def get_state(slug: str) -> dict | None:
+    """Server-side status/title for a slug, or None if it is gone."""
+    try:
+        with _client() as c:
+            r = c.get(f"/api/w/{slug}/state")
+            if r.status_code == 404:
+                return None
+            r.raise_for_status()
+            return r.json()
+    except Exception:
+        return None
+
+
 def get_watch_events(since: str | None = None) -> list[dict]:
     """Finished viewing sessions, for tray notifications."""
     try:

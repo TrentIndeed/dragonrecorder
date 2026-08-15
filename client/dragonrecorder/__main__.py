@@ -5,9 +5,11 @@ and the render-job poller run in daemon threads. Overlay windows are created
 once and shown/hidden per take.
 """
 
+import io
 import logging
 import os
 import shutil
+import sys
 import threading
 import time
 
@@ -30,14 +32,25 @@ import pystray
 import webview
 from PIL import Image, ImageDraw
 
-from . import api, config, devices, session, ui
+from . import api, config, devices, recorder, session, ui
 
+# A log line took down a whole recording's processing: the console stream is
+# cp1252 here, an INFO message contained an arrow, and the UnicodeEncodeError
+# propagated out of log.info() and aborted run_pipeline - no title, no
+# captions, no edits. Two guards: write UTF-8 with replacement everywhere,
+# and never let a logging failure raise into application code.
+logging.raiseExceptions = False
+_stream = logging.StreamHandler(
+    io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace",
+                     line_buffering=True)
+    if hasattr(sys.stderr, "buffer") else sys.stderr)
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(name)s %(levelname)s %(message)s",
     handlers=[
-        logging.FileHandler(config.APPDATA_DIR / "client.log", encoding="utf-8"),
-        logging.StreamHandler(),
+        logging.FileHandler(config.APPDATA_DIR / "client.log", encoding="utf-8",
+                            errors="replace"),
+        _stream,
     ],
 )
 log = logging.getLogger("dr.main")
@@ -216,7 +229,7 @@ class App:
         return img
 
     def notify(self, title: str, msg: str):
-        log.info("toast: %s — %s", title, msg)
+        log.info("toast: %s - %s", title, msg)
         try:
             if self.tray:
                 self.tray.notify(msg, title)
@@ -266,6 +279,46 @@ class App:
         os._exit(0)
 
     # ---- background workers ----
+
+    def recover_unfinished_takes(self):
+        """Finish takes the app was killed in the middle of.
+
+        A slug is minted when recording starts, so a crash (or a kill) between
+        then and the end of processing leaves a recording stuck at
+        "uploading..." or sitting there with no title. The local take dir
+        still has the video, so both are recoverable rather than mysteries in
+        the library.
+        """
+        time.sleep(20)          # let the UI settle first
+        cutoff = time.time() - 2 * 86400
+        for d in sorted(config.RECORDINGS_DIR.iterdir()):
+            try:
+                marker, video = d / "slug.txt", d / "video.mp4"
+                if not (d.is_dir() and marker.exists() and video.exists()):
+                    continue
+                if d.stat().st_mtime < cutoff or (d / "recovered.txt").exists():
+                    continue
+                slug = marker.read_text("utf-8").strip()
+                if not slug or slug.startswith("local-"):
+                    continue
+                state = api.get_state(slug)
+                if state is None or state.get("status") == "expired":
+                    continue
+                if state.get("status") == "pending":
+                    log.info("recovering %s: upload never finished", slug)
+                    dur = recorder.probe_duration(video)
+                    if not api.upload_video(slug, video, dur):
+                        log.warning("recovery upload failed for %s", slug)
+                        continue
+                elif state.get("title"):
+                    continue        # nothing to do
+                else:
+                    log.info("recovering %s: uploaded but never analyzed", slug)
+                from . import processing
+                processing.run_pipeline(slug, video)
+                (d / "recovered.txt").write_text("done", "utf-8")
+            except Exception:
+                log.exception("could not recover take in %s", d)
 
     def watch_events_loop(self):
         """Tray toast when someone finishes watching one of your recordings.
@@ -339,13 +392,15 @@ class App:
         threading.Thread(target=self.run_tray, daemon=True).start()
         threading.Thread(target=self.cleanup_old_takes, daemon=True).start()
         threading.Thread(target=self.watch_events_loop, daemon=True).start()
+        threading.Thread(target=self.recover_unfinished_takes,
+                         daemon=True).start()
         # web dashboard "Record a video" button → open the launcher panel
         from . import bridge
 
         def render_now():
             # kept so older player pages that poke this endpoint still get a
             # 200; the server renders cut edits itself now
-            log.debug("render poke ignored — the server renders edits")
+            log.debug("render poke ignored - the server renders edits")
         bridge.start(self.overlays.show_panel, self.overlays.hide_panel,
                      lambda: {"state": self.session.state.name,
                               "pid": os.getpid()},
@@ -354,7 +409,7 @@ class App:
     def main(self):
         from . import bridge
         if bridge.poke_existing():
-            log.info("already running — opened the existing panel instead")
+            log.info("already running - opened the existing panel instead")
             return
         self.overlays.create_panel(PanelApi(self))
         self.overlays.ensure_toolbar(ToolbarApi(self))

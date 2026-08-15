@@ -776,17 +776,22 @@ def watch_events(since: str | None = None):
 
 
 async def reaper_loop():
+    # hourly, not daily: expiry only needs a daily sweep, but abandoned
+    # "uploading..." rows should not sit in the library for a whole day
     while True:
         try:
             reap()
         except Exception:
             log.exception("reaper failed")
-        await asyncio.sleep(24 * 3600)
+        await asyncio.sleep(3600)
 
 
 def reap():
     now = iso(utcnow())
-    stale_pending = iso(utcnow() - timedelta(hours=24))
+    # A slug is minted when recording starts, so any take abandoned before
+    # upload sits at "uploading..." in the library. An hour is far longer
+    # than a real upload and stops dead rows lingering for a day.
+    stale_pending = iso(utcnow() - timedelta(hours=1))
     with db.connect() as dbc:
         expired = dbc.execute(
             "SELECT slug FROM recordings WHERE status='ready' AND expires_at<?",
