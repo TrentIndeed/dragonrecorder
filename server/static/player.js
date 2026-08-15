@@ -402,11 +402,20 @@
     setTimeout(() => t.classList.remove("show"), 1800);
   };
 
-  // ---- chapters: list below the video + gaps in the scrub + current name
-  const chapters = window.DR.chapters;
-  if (Array.isArray(chapters) && chapters.length > 1) {
-    $("chapters").hidden = false;
+
+  // ---- live metadata: fill the page in as processing lands ----
+  // A recording is watchable seconds after it stops, but its title,
+  // description, captions and chapters arrive up to a minute later. Poll for
+  // them so an open tab updates itself instead of needing a refresh.
+  let activeChapters = [];
+  const renderChapters = (chapters) => {
+    if (!Array.isArray(chapters) || chapters.length < 2) return;
     const list = $("chapterList");
+    if (list.dataset.filled === String(chapters.length)) return;
+    list.dataset.filled = String(chapters.length);
+    activeChapters = chapters;
+    list.textContent = "";
+    $("chapters").hidden = false;
     for (const c of chapters) {
       const b = document.createElement("button");
       b.className = "chaprow";
@@ -416,23 +425,88 @@
       list.appendChild(b);
     }
     const dur0 = window.DR.duration;
+    scrub.querySelectorAll(".chapgap").forEach((g) => g.remove());
     if (dur0) {
       for (const c of chapters.slice(1)) {
         const gap = document.createElement("div");
         gap.className = "chapgap";
         gap.style.left = `${(c.t / dur0) * 100}%`;
-        $("scrub").appendChild(gap);
+        scrub.appendChild(gap);
       }
     }
-    video.addEventListener("timeupdate", () => {
-      const t = video.currentTime;
-      let cur = chapters[0], idx = 0;
-      chapters.forEach((c, i) => { if (c.t <= t) { cur = c; idx = i; } });
-      $("chapName").textContent = "· " + cur.title;
-      list.querySelectorAll(".chaprow").forEach((r, i) =>
-        r.classList.toggle("now", i === idx));
-    });
-  }
+  };
+
+  const applyMeta = (s) => {
+    if (s.title) {
+      const h1 = $("title");
+      const pill = h1.querySelector(".pill");
+      if (h1.childNodes[0]?.nodeValue?.trim() !== s.title) {
+        h1.childNodes[0].nodeValue = s.title;
+        document.title = `${s.title} — DragonRecorder`;
+      }
+      if (s.title_is_ai && !pill) {
+        const p = document.createElement("span");
+        p.className = "pill ai-badge";
+        p.title = "Title generated from the transcript";
+        p.textContent = "AI";
+        h1.appendChild(p);
+      }
+    }
+    if (s.description) {
+      let desc = document.querySelector(".desc");
+      if (!desc) {
+        desc = document.createElement("div");
+        desc.className = "desc";
+        desc.innerHTML = '<p></p><div class="aihint">' +
+          "Description generated from the transcript</div>";
+        $("stage").after(desc);
+      }
+      const p = desc.querySelector("p");
+      if (p.textContent !== s.description) p.textContent = s.description;
+    }
+    if (s.has_vtt && !video.querySelector("track")) {
+      const t = document.createElement("track");
+      t.kind = "captions";
+      t.label = "Captions";
+      t.srclang = "en";
+      t.src = `/media/${slug}/captions.vtt`;
+      t.default = true;
+      video.appendChild(t);
+      if (video.textTracks[0]) video.textTracks[0].mode = "showing";
+    }
+    renderChapters(s.chapters);
+    const pill = $("viewPill");
+    if (pill && typeof s.views === "number") {
+      pill.textContent = `${s.views} view${s.views === 1 ? "" : "s"}`;
+    }
+  };
+
+  const pollMeta = async () => {
+    try {
+      const r = await fetch(`/api/w/${slug}/state`);
+      if (r.ok) {
+        const s = await r.json();
+        applyMeta(s);
+        // stop once processing has clearly finished
+        if (s.analyzed && s.title) return;
+      }
+    } catch (e) {}
+    setTimeout(pollMeta, 5000);
+  };
+  setTimeout(pollMeta, 3000);
+
+  // chapters that were already in the page, plus the current-chapter tracker
+  // (renderChapters handles both these and any that arrive from the poll)
+  renderChapters(window.DR.chapters);
+  video.addEventListener("timeupdate", () => {
+    if (!activeChapters.length) return;
+    const t = video.currentTime;
+    let cur = activeChapters[0], idx = 0;
+    activeChapters.forEach((c, i) => { if (c.t <= t) { cur = c; idx = i; } });
+    $("chapName").textContent = "· " + cur.title;
+    $("chapterList").querySelectorAll(".chaprow").forEach((r, i) =>
+      r.classList.toggle("now", i === idx));
+  });
 
   // ---- waveform strip: shows what the enabled cuts take out ----
   // Peaks are of the ORIGINAL take, so the shaded regions line up with the

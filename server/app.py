@@ -311,12 +311,38 @@ def watch(request: Request, slug: str, n: str | None = None,
 
 @app.get("/api/w/{slug}/state")
 def watch_state(slug: str):
+    """Everything the watch page renders about the recording itself.
+
+    The page polls this while processing lands, so a title, description,
+    chapters or captions appear on an open tab instead of only after a
+    manual refresh.
+    """
     with db.connect() as dbc:
-        row = dbc.execute("SELECT status, title FROM recordings WHERE slug=?",
-                          (slug,)).fetchone()
-    if row is None:
-        raise HTTPException(404)
-    return {"status": row["status"], "title": row["title"]}
+        row = dbc.execute(
+            "SELECT status, title, title_is_ai, description, duration_s,"
+            " has_vtt, has_words, chapters, default_speed, wpm"
+            " FROM recordings WHERE slug=?", (slug,)).fetchone()
+        if row is None:
+            raise HTTPException(404)
+        analyzed = dbc.execute("SELECT COUNT(*) c FROM edits WHERE slug=?",
+                               (slug,)).fetchone()["c"] > 0
+        views = dbc.execute(
+            "SELECT COUNT(*) c FROM views WHERE slug=? AND is_owner=0",
+            (slug,)).fetchone()["c"]
+    return {
+        "status": row["status"],
+        "title": row["title"],
+        "title_is_ai": bool(row["title_is_ai"]),
+        "description": row["description"],
+        "duration_s": row["duration_s"],
+        "has_vtt": bool(row["has_vtt"]),
+        "has_words": bool(row["has_words"]),
+        "chapters": json.loads(row["chapters"]) if row["chapters"] else None,
+        "default_speed": row["default_speed"],
+        "wpm": row["wpm"],
+        "analyzed": analyzed,
+        "views": views,
+    }
 
 
 def merge_ranges(ranges: list[list[float]]) -> list[list[float]]:

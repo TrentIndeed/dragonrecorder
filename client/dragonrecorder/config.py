@@ -45,7 +45,7 @@ DEFAULT_SETTINGS = {
     "mic_auto": True,      # True: follow the Windows default device
     "mic_denoise": True,   # hum/hiss filter on the captured mic
     "blur": False,
-    "blur_strength": 6,    # background blur radius in px (2-16)
+    "blur_strength": 3,    # background blur radius in px (1-10)
     "bubble_shape": "rect",   # "rect" (rounded rectangle) or "circle"
     "bubble_scale": 80,    # camera bubble size, percent (50-160)
     "fps": 30,

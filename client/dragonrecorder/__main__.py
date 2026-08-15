@@ -116,7 +116,7 @@ class PanelApi:
         old_mon = cur["monitor"]
         old_shape = cur.get("bubble_shape", "rect")
         old_mic = cur["mic"]
-        old_strength = cur.get("blur_strength", 6)
+        old_strength = cur.get("blur_strength", 3)
         old_scale = cur.get("bubble_scale", 100)
         cur.update({k: s[k] for k in config.PANEL_KEYS if k in s})
         if "mic" in s and s["mic"] != old_mic:
@@ -142,7 +142,7 @@ class PanelApi:
                     ov.show_bubble(cur["monitor"], cur["camera"], cur["blur"])
             elif cur["camera"] and (cur["blur"] != old_blur
                                     or cur.get("blur_strength") != old_strength):
-                ov.set_bubble_blur(cur["blur"], cur.get("blur_strength", 6))
+                ov.set_bubble_blur(cur["blur"], cur.get("blur_strength", 3))
 
     def start_recording(self):
         # keep the webcam preview up — it becomes the recorded bubble

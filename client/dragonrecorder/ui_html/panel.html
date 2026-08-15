@@ -208,8 +208,10 @@
     <label class="tunerow" id="blurStrengthRow" hidden
            title="How hard the background behind you is blurred">
       <span>Blur strength</span>
-      <input type="range" id="blurStrength" min="2" max="16" step="1">
-      <span class="num" id="blurStrengthVal">6</span>
+      <!-- 1-10, not 2-16: the old top end turned the room to soup and the
+           old bottom was still a visible wash -->
+      <input type="range" id="blurStrength" min="1" max="10" step="1">
+      <span class="num" id="blurStrengthVal">3</span>
     </label>
   </div>
 
@@ -328,7 +330,7 @@
     shape = info.settings.bubble_shape || "rect";
     renderShape();
     $("denoise").checked = info.settings.mic_denoise !== false;
-    $("blurStrength").value = info.settings.blur_strength ?? 6;
+    $("blurStrength").value = Math.min(10, info.settings.blur_strength ?? 3);
     $("camSize").value = info.settings.bubble_scale ?? 100;
     $("camSizeVal").textContent = $("camSize").value;
     renderBlurStrength();

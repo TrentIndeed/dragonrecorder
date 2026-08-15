@@ -333,7 +333,7 @@ class Overlays:
         cam_js = camera.replace("\\", "\\\\").replace("'", "\\'")
         self.bubble.evaluate_js(
             f"startCamera('{cam_js}', {str(blur).lower()}, "
-            f"{int(s.get('blur_strength', 6))})")
+            f"{int(s.get('blur_strength', 3))})")
 
     def resize_bubble(self, scale_pct: int) -> None:
         """Resize the live bubble in place, for slider drags.
@@ -360,7 +360,7 @@ class Overlays:
     def set_bubble_blur(self, blur: bool, strength: int | None = None):
         if self.bubble:
             if strength is None:
-                strength = int(config.load_settings().get("blur_strength", 6))
+                strength = int(config.load_settings().get("blur_strength", 3))
             self.bubble.evaluate_js(
                 f"setBlur({str(blur).lower()}, {int(strength)})")
 
