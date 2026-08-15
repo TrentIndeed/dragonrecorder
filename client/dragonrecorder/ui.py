@@ -38,7 +38,7 @@ BUBBLE = int(358 * S)                       # circle shape (square window)
 BUBBLE_RECT_W, BUBBLE_RECT_H = int(488 * S), int(274 * S)   # 16:9 fallback
 SHADOW_PAD = 10          # transparent margin the bubble's drop shadow needs
 COUNTDOWN = int(180 * S)
-PANEL_W, PANEL_H = int(336 * S), int(710 * S)   # tall enough for the tune rows
+PANEL_W, PANEL_H = int(336 * S), int(748 * S)   # fits the tune rows + footer
 PANEL_MARGIN = int(14 * S)
 
 
