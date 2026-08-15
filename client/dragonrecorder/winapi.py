@@ -111,21 +111,49 @@ def clear_region(hwnd: int) -> None:
         user32.SetWindowRgn(wt.HWND(hwnd), None, True)
 
 
-def set_round_region(hwnd: int, w: int, h: int, radius: int) -> None:
-    """Clip a window to a rounded rectangle at the OS level. Shaped opaque
-    windows replace per-pixel transparency, which pywebview/WebView2 cannot
-    do reliably (white box artifacts)."""
-    if hwnd:
-        rgn = gdi32.CreateRoundRectRgn(0, 0, w + 1, h + 1, radius * 2, radius * 2)
-        user32.SetWindowRgn(wt.HWND(hwnd), rgn, True)
+LWA_COLORKEY = 0x00000001
+COLOR_BTNFACE = 15
 
 
-def set_ellipse_region(hwnd: int, w: int, h: int) -> None:
-    """Clip 1px inside the window so the region edge never exposes unpainted
-    (white) surface pixels at the rim."""
-    if hwnd:
-        rgn = gdi32.CreateEllipticRgn(1, 1, w, h)
-        user32.SetWindowRgn(wt.HWND(hwnd), rgn, True)
+def set_colorkey_transparent(hwnd: int, rgb: tuple[int, int, int] | None = None
+                             ) -> bool:
+    """Punch the host form's background colour out of a WebView2 window.
+
+    This is the only shaping mechanism that actually works on this stack,
+    and it took measuring to find:
+
+    - SetWindowRgn clips input but composites the excluded area as opaque
+      WHITE — that was the white square behind the round bubble.
+    - Colour-keying a colour the *page* paints does nothing: the key applies
+      to the form's own painting, not to WebView2's child surface.
+
+    So the page is created transparent (its transparent areas expose the
+    WinForms background), and that background colour is keyed out here. The
+    camera image is painted by WebView2, so even a pure-white shirt can
+    never be keyed away by accident.
+    """
+    if not hwnd:
+        return False
+    if rgb is None:
+        # whatever the form actually paints — SystemColors.Control, which a
+        # custom Windows theme can change
+        c = ctypes.windll.user32.GetSysColor(COLOR_BTNFACE)
+        rgb = (c & 0xFF, (c >> 8) & 0xFF, (c >> 16) & 0xFF)
+    style = user32.GetWindowLongW(wt.HWND(hwnd), GWL_EXSTYLE)
+    user32.SetWindowLongW(wt.HWND(hwnd), GWL_EXSTYLE, style | WS_EX_LAYERED)
+    key = rgb[0] | (rgb[1] << 8) | (rgb[2] << 16)   # COLORREF is 0x00BBGGRR
+    ok = bool(user32.SetLayeredWindowAttributes(
+        wt.HWND(hwnd), key, 0, LWA_COLORKEY))
+    if not ok:
+        log.error("colour key failed for hwnd %s", hwnd)
+    return ok
+
+
+def window_size(hwnd: int) -> tuple[int, int]:
+    r = wt.RECT()
+    if not hwnd or not user32.GetWindowRect(wt.HWND(hwnd), ctypes.byref(r)):
+        return (0, 0)
+    return (r.right - r.left, r.bottom - r.top)
 
 
 def hide_window(hwnd: int) -> None:

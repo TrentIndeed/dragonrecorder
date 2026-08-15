@@ -16,7 +16,7 @@ from enum import Enum, auto
 
 import pyperclip
 
-from . import api, config, recorder
+from . import api, config, recorder, sounds
 
 log = logging.getLogger("dr.session")
 
@@ -68,7 +68,8 @@ class Session:
         take_dir = config.RECORDINGS_DIR / time.strftime("%Y%m%d-%H%M%S")
         self.rec = recorder.Recorder(
             take_dir, settings["monitor"], settings["mic"],
-            settings.get("fps", 30))
+            settings.get("fps", 30),
+            denoise=settings.get("mic_denoise", True))
         if countdown_s > 0:
             self.ui.show_countdown(settings["monitor"], countdown_s)
             threading.Thread(target=self._countdown_then_start,
@@ -118,6 +119,10 @@ class Session:
                 self._release_slug_async()
                 return
             self.state = State.RECORDING
+            # ding only once capture is actually running, so it confirms the
+            # take started rather than that a hotkey was pressed
+            if settings.get("start_sound", True):
+                sounds.play("start.wav")
             self.ui.show_toolbar(settings["monitor"])
             if settings["camera"]:
                 self.ui.show_bubble(settings["monitor"], settings["camera"],

@@ -43,12 +43,19 @@ DEFAULT_SETTINGS = {
     "camera": "",          # dshow device name, "" = none
     "mic": "",             # dshow device name, "" = none
     "mic_auto": True,      # True: follow the Windows default device
+    "mic_denoise": True,   # hum/hiss filter on the captured mic
     "blur": False,
+    "blur_strength": 6,    # background blur radius in px (2-16)
     "bubble_shape": "rect",   # "rect" (rounded rectangle) or "circle"
     "fps": 30,
+    "start_sound": True,   # audible cue when capture actually begins
     "bubble_x": None,      # remembered bubble position
     "bubble_y": None,
 }
+# every settings key the panel is allowed to write (keeps a malformed or
+# stale payload from clobbering unrelated state like bubble_x)
+PANEL_KEYS = ("monitor", "camera", "mic", "blur", "bubble_shape",
+              "blur_strength", "mic_denoise", "start_sound", "fps")
 
 
 def load_settings() -> dict:

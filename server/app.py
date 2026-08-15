@@ -289,9 +289,6 @@ def watch(request: Request, slug: str, n: str | None = None,
     })
     vid = ensure_viewer(resp, dr_vid)
     with db.connect() as dbc:
-        seen_before = dbc.execute(
-            "SELECT 1 FROM views WHERE slug=? AND viewer_id=?",
-            (slug, vid)).fetchone() is not None
         dbc.execute(
             "INSERT INTO views (slug, viewer_id, label, is_owner, last_seen)"
             " VALUES (?,?,?,?,?) ON CONFLICT(slug, viewer_id) DO UPDATE SET"
@@ -300,10 +297,6 @@ def watch(request: Request, slug: str, n: str | None = None,
             " is_owner=MAX(views.is_owner, excluded.is_owner)",
             (slug, vid, n, int(bool(dr_owner)), iso(utcnow())),
         )
-    if not dr_owner and not seen_before:
-        who = n or "someone"
-        title = row["title"] or slug
-        send_telegram(f"👀 {who} is watching “{title}”\n{config.PUBLIC_URL}/w/{slug}")
     return resp
 
 
@@ -341,7 +334,8 @@ async def progress(slug: str, request: Request,
     plays = int(body.get("plays", 0))
     first_play = body.get("first_play_s")
     with db.connect() as dbc:
-        row = dbc.execute("SELECT ranges, play_count, first_play_s FROM views"
+        row = dbc.execute("SELECT ranges, play_count, first_play_s, is_owner,"
+                          " label, notified_at FROM views"
                           " WHERE slug=? AND viewer_id=?",
                           (slug, dr_vid)).fetchone()
         if row is None:
@@ -358,7 +352,40 @@ async def progress(slug: str, request: Request,
             (json.dumps(merged), watched, max_pos, iso(utcnow()),
              plays, fp, slug, dr_vid),
         )
+        alert = _watch_alert(dbc, slug, dr_vid, row, watched)
+    if alert:
+        send_telegram(alert)
     return {"ok": True}
+
+
+# Notifying on page-load meant one alert per cookie-less open — link
+# previews, in-app browsers and reloads each looked like a new viewer. Alert
+# on real watching instead, at most once per recording per cooldown.
+WATCH_ALERT_MIN_S = 5.0        # ignore openers who bounce immediately
+WATCH_ALERT_COOLDOWN_S = 1800  # one alert per recording per 30 min
+
+
+def _watch_alert(dbc, slug: str, vid: str, row, watched: float) -> str | None:
+    if row["is_owner"] or row["notified_at"] or watched < WATCH_ALERT_MIN_S:
+        return None
+    last = dbc.execute(
+        "SELECT MAX(notified_at) m FROM views WHERE slug=?", (slug,)
+    ).fetchone()["m"]
+    if last:
+        try:
+            age = (utcnow() - datetime.fromisoformat(last)).total_seconds()
+            if age < WATCH_ALERT_COOLDOWN_S:
+                return None
+        except ValueError:
+            pass
+    dbc.execute("UPDATE views SET notified_at=? WHERE slug=? AND viewer_id=?",
+                (iso(utcnow()), slug, vid))
+    rec = dbc.execute("SELECT title FROM recordings WHERE slug=?",
+                      (slug,)).fetchone()
+    who = row["label"] or "someone"
+    title = (rec["title"] if rec else None) or slug
+    return (f"👀 {who} is watching “{title}” ({int(watched)}s in)"
+            f"\n{config.PUBLIC_URL}/w/{slug}")
 
 
 @app.get("/api/w/{slug}/heatmap")

@@ -50,15 +50,46 @@ def _nvenc_available() -> bool:
         return False
 
 
+def audio_filters(denoise: bool = True) -> str:
+    """Make raw mic capture sound like a finished video's audio.
+
+    Interfaces like the SSL 2 present two input channels and put the mic on
+    channel 1, so a straight stereo capture is voice-in-one-ear at half the
+    perceived level (measured on a real take: ch1 RMS -32 dB, ch2 -84 dB,
+    integrated -22.9 LUFS against a -16 LUFS web target). Summing to mono
+    fixes the channel, then loudnorm brings the level up to broadcast target
+    and tames the 29 LU dynamic range that made quiet speech disappear.
+    """
+    chain = [
+        # sum, don't average: averaging a mic that only feeds ch1 costs 6 dB
+        "pan=mono|c0=c0+c1",
+        "highpass=f=80",            # mains hum, desk rumble, HVAC
+    ]
+    if denoise:
+        # FFT denoiser trained on the running noise floor — kills steady
+        # hiss/hum without the underwater artifacts of aggressive gates
+        chain.append("afftdn=nf=-25:tn=1")
+    chain += [
+        # aiming at -14 (YouTube's target) lands around -16 in practice:
+        # single-pass loudnorm is conservative, measured -18.6 when asked
+        # for -16 on a real take
+        "loudnorm=I=-14:TP=-1.5:LRA=11",
+        "alimiter=limit=0.95",             # catch transient overshoot
+    ]
+    return ",".join(chain)
+
+
 class Recorder:
     """One Recorder per take. Owns the segment list and the live ffmpeg."""
 
-    def __init__(self, take_dir: Path, monitor: int, mic: str, fps: int = 30):
+    def __init__(self, take_dir: Path, monitor: int, mic: str, fps: int = 30,
+                 denoise: bool = True):
         self.take_dir = take_dir
         self.take_dir.mkdir(parents=True, exist_ok=True)
         self.monitor = monitor
         self.mic = mic
         self.fps = fps
+        self.denoise = denoise
         self.segments: list[Path] = []
         self.proc: subprocess.Popen | None = None
         self.use_nvenc = _nvenc_available()
@@ -97,7 +128,8 @@ class Recorder:
                 "-pix_fmt", "yuv420p",
             ]
         if self.mic:
-            cmd += ["-c:a", "aac", "-b:a", "160k"]
+            cmd += ["-af", audio_filters(self.denoise),
+                    "-c:a", "aac", "-b:a", "160k", "-ac", "1"]
         cmd += ["-movflags", "+faststart", str(out)]
         return cmd
 

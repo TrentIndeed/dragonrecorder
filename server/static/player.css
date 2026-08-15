@@ -44,17 +44,36 @@ body.owner .layout {
   box-shadow: var(--shadow);
 }
 .stage video { width: 100%; max-height: 78vh; display: block; }
-/* captions ride the stage size — vw keeps them proportional to the video
-   the way YouTube/Loom scale theirs, instead of a fixed px that looks
-   huge on a small player and tiny on a wide one */
+/* Caption size is set from the player's own width in JS (--cue-size), so a
+   phone-sized player and a 1600px stage read the same. */
 .stage video::cue {
   font-family: var(--sans);
-  font-size: clamp(15px, 1.2vw, 32px);
+  font-size: var(--cue-size, 17px);
   font-weight: 500;
   line-height: 1.3;
   color: #fff;
   background: rgba(8, 8, 8, 0.75);
 }
+
+/* center pause glyph, like every desktop player */
+.pauseflash {
+  position: absolute;
+  left: 50%; top: 50%;
+  transform: translate(-50%, -50%) scale(0.9);
+  width: 84px; height: 84px;
+  border-radius: 50%;
+  background: rgba(16, 17, 20, 0.62);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.16s ease, transform 0.16s ease;
+  z-index: 3;
+}
+.pauseflash svg { width: 38px; height: 38px; }
+.pauseflash.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
 
 .preplay {
   position: absolute;
@@ -135,6 +154,31 @@ body.owner .layout {
 #speedBtn { font-weight: 500; }
 #fsBtn { font-size: 20px; line-height: 1; }
 #ccBtn[aria-pressed="true"] { color: #7aa5ff; }
+
+/* volume: button always visible, slider slides open on hover/focus */
+.volwrap { display: flex; align-items: center; gap: 2px; }
+.volwrap input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 0;
+  opacity: 0;
+  height: 4px;
+  padding: 0;
+  border: none;
+  border-radius: 2px;
+  background: linear-gradient(to right, #fff var(--fill, 50%),
+                              rgba(255, 255, 255, 0.3) var(--fill, 50%));
+  transition: width 0.16s ease, opacity 0.16s ease;
+  cursor: pointer;
+}
+.volwrap:hover input[type="range"],
+.volwrap input[type="range"]:focus-visible { width: 78px; opacity: 1; }
+.volwrap input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px; height: 12px;
+  border-radius: 50%;
+  background: #fff;
+}
 
 /* scrub bar = attention histogram + chapter gaps */
 .scrub {
@@ -402,6 +446,55 @@ body.owner #transcriptSection.in-rail { display: block; }
   body.owner .layout { display: block; }
   .rail { position: static; margin-top: 20px; }
   body.owner #transcriptSection { display: block; }
+}
+
+/* ---- phones ----
+   The desktop scale (27px titles, 25px control icons, 32px gutters) is built
+   for a 1600px stage; on a 390px screen the same numbers eat the whole
+   viewport. Everything below is the same layout at phone scale. */
+@media (max-width: 700px) {
+  .watch { padding: 10px 12px 48px; }
+  .head { margin-bottom: 10px; }
+  .head h1 { font-size: 19px; gap: 8px; line-height: 1.25; }
+  .byline { font-size: 13px; gap: 7px; flex-wrap: wrap; }
+  .topbar { margin-bottom: 6px; }
+  .topbar a.back { font-size: 13.5px; }
+
+  .stage { border-radius: 10px; }
+  .stage video { max-height: 56vh; }
+
+  /* one row of controls has to hold everything: shrink the furniture and
+     drop what a phone cannot use (hover-only volume slider, chapter name) */
+  .controls { gap: 7px; padding: 8px 9px 9px; }
+  .controls button { padding: 4px; }
+  .controls button svg { width: 20px; height: 20px; }
+  .controls .timecode { font-size: 12.5px; }
+  .controls .chapname { display: none; }
+  .volwrap input[type="range"] { display: none; }
+  #fsBtn { font-size: 17px; }
+  .scrub { height: 26px; }
+  .scrub canvas { height: 18px; bottom: 4px; }
+
+  .bigplay { width: 64px; height: 64px; }
+  .bigplay svg { width: 26px; height: 26px; }
+  .prefacts { font-size: 13px; }
+  .pauseflash { width: 62px; height: 62px; }
+  .pauseflash svg { width: 27px; height: 27px; }
+
+  .desc { padding: 13px 14px; border-radius: 11px; margin-top: 12px; }
+  .desc p { font-size: 14.5px; line-height: 1.55; }
+  .chaprow { font-size: 14.5px; padding: 7px 6px; }
+  .reactions { gap: 7px; margin: 14px 0 18px; flex-wrap: wrap; }
+  .react { padding: 6px 13px; font-size: 17px; }
+
+  .cols { gap: 22px; }
+  .rail { padding: 14px 14px 18px; border-radius: 12px; }
+  .rail .tab { padding: 6px 10px; font-size: 14px; }
+  .rail .edit-row { padding: 11px 12px; font-size: 14px; }
+  .actions button { padding: 11px 12px; font-size: 14px; }
+  .statgrid { gap: 6px; }
+  .statgrid .stat .v { font-size: 17px; }
+  #commentForm textarea, #commentForm input { font-size: 16px; }  /* no iOS zoom */
 }
 
 /* page toast */

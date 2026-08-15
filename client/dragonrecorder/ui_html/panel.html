@@ -121,6 +121,21 @@
   }
   .start:hover { filter: brightness(1.07); }
 
+  .tune { display: grid; gap: 1px; margin: 2px 0 2px; }
+  .tunerow {
+    display: flex; align-items: center; gap: 8px; cursor: pointer;
+    padding: 6px 10px; border-radius: 9px;
+    color: var(--muted); font: 12px system-ui;
+  }
+  .tunerow:hover { background: var(--row); color: var(--text); }
+  .tunerow input[type="range"] {
+    margin-left: auto; width: 92px; accent-color: var(--ai);
+  }
+  .tunerow input[type="checkbox"] { margin-left: auto; accent-color: var(--ai); }
+  .tunerow .num {
+    width: 16px; text-align: right; font-variant-numeric: tabular-nums;
+  }
+
   .bottom { display: flex; gap: 6px; justify-content: space-around; }
   .bottom button {
     flex: 1; background: none; border: none; border-radius: 10px;
@@ -178,6 +193,19 @@
     <svg class="chev" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5z"/></svg>
   </label>
 
+  <div class="tune">
+    <label class="tunerow" title="Filters steady hum and hiss out of the mic and evens out quiet speech">
+      <span>Clean up mic audio</span>
+      <input type="checkbox" id="denoise">
+    </label>
+    <label class="tunerow" id="blurStrengthRow" hidden
+           title="How hard the background behind you is blurred">
+      <span>Blur strength</span>
+      <input type="range" id="blurStrength" min="2" max="16" step="1">
+      <span class="num" id="blurStrengthVal">6</span>
+    </label>
+  </div>
+
   <button class="start" id="start">Start Recording</button>
   <div class="lastlink" id="lastLink" hidden>
     <span class="ok">✓</span>
@@ -207,6 +235,7 @@
 <script>
   const $ = (id) => document.getElementById(id);
   let saveTimer;
+  let loaded = false;      // guards save() until settings are on screen
   let shape = "rect";
   function renderShape() {
     $("shapeRect").style.display = shape === "rect" ? "" : "none";
@@ -291,13 +320,20 @@
     $("blur").classList.toggle("on", info.settings.blur);
     shape = info.settings.bubble_shape || "rect";
     renderShape();
+    $("denoise").checked = info.settings.mic_denoise !== false;
+    $("blurStrength").value = info.settings.blur_strength ?? 6;
+    renderBlurStrength();
     updateBadges();
     if (!info.token_ok) {
       $("err").textContent = "CAPTURE_TOKEN / SERVER_URL missing in .env — uploads will fail.";
     }
+    loaded = true;   // saving before this point would persist empty defaults
   }
 
+  // every control on the card funnels through here, so nothing can be
+  // changed without being written to settings.json
   function save() {
+    if (!loaded) return;
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => pywebview.api.save_setup({
       monitor: monIdx,
@@ -305,7 +341,15 @@
       mic: $("mic").value,
       blur: $("blur").classList.contains("on"),
       bubble_shape: shape,
+      blur_strength: parseInt($("blurStrength").value, 10),
+      mic_denoise: $("denoise").checked,
     }), 150);
+  }
+
+  function renderBlurStrength() {
+    const on = $("blur").classList.contains("on");
+    $("blurStrengthRow").hidden = !on;
+    $("blurStrengthVal").textContent = $("blurStrength").value;
   }
   function updateBadges() {
     const set = (badge, on) => {
@@ -321,8 +365,14 @@
 
   $("blur").addEventListener("click", () => {
     $("blur").classList.toggle("on");
+    renderBlurStrength();
     save();
   });
+  $("blurStrength").addEventListener("input", () => {
+    $("blurStrengthVal").textContent = $("blurStrength").value;
+    save();
+  });
+  $("denoise").addEventListener("change", save);
   $("shape").addEventListener("click", () => {
     shape = shape === "rect" ? "circle" : "rect";
     renderShape();

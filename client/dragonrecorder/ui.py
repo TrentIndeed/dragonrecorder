@@ -84,6 +84,17 @@ class Overlays:
         winapi.force_rect_topmost(hwnd, x, y, w, h - 2)
         winapi.force_rect_topmost(hwnd, x, y, w, h)
 
+    def _shape_by_css(self, title: str) -> None:
+        """Let the page's CSS define the shape and key out everything else.
+
+        Any leftover region has to go first: a region wins over the colour
+        key and composites its excluded area as opaque white.
+        """
+        hwnd = self._hwnd(title)
+        winapi.clear_region(hwnd)
+        winapi.dwm_no_round(hwnd)
+        winapi.set_colorkey_transparent(hwnd)
+
     def _hide_soon(self, window, title: str) -> None:
         """transparent=True windows ignore hidden=True at creation — hide
         them for real once their hwnd exists. WebView2 windows can take many
@@ -213,7 +224,8 @@ class Overlays:
                 x=-4000, y=0,
                 width=COUNTDOWN, height=COUNTDOWN, frameless=True,
                 on_top=True, resizable=False, focus=False,
-                easy_drag=False, background_color="#0d0e11")
+                easy_drag=False, transparent=True,
+                background_color="#0d0e11")
             # not excluded: the countdown finishes before ffmpeg starts
             self._exclude_later("DR-Countdown", exclude=False)
 
@@ -222,13 +234,10 @@ class Overlays:
         geo = devices.monitor_geometry(monitor)
         x = geo["left"] + (geo["width"] - COUNTDOWN) // 2
         y = geo["top"] + (geo["height"] - COUNTDOWN) // 2
-        hwnd = self._hwnd("DR-Countdown")
-        winapi.dwm_no_round(hwnd)
-        winapi.set_ellipse_region(hwnd, COUNTDOWN, COUNTDOWN)
         self.set_countdown(seconds)
         self.countdown.show()
         self._pin("DR-Countdown", x, y, COUNTDOWN, COUNTDOWN, self.countdown)
-        winapi.set_ellipse_region(hwnd, COUNTDOWN, COUNTDOWN)
+        self._shape_by_css("DR-Countdown")
 
     def set_countdown(self, n: int):
         if self.countdown:
@@ -244,12 +253,14 @@ class Overlays:
         with self._lock:
             if self.bubble:
                 return
+            # transparent: the round/rounded shape is drawn by CSS. Window
+            # regions are not an option here — see bubble.html.
             self.bubble = webview.create_window(
                 "DR-Bubble", _url("bubble.html"),
                 x=-4000, y=0,
                 width=BUBBLE, height=BUBBLE, frameless=True, on_top=True,
-                resizable=False, focus=False, background_color="#0e0f12",
-                easy_drag=True)
+                resizable=False, focus=False, transparent=True,
+                background_color="#0e0f12", easy_drag=True)
             # not capture-excluded (the bubble is recorded on purpose), but
             # it must stay out of the taskbar/alt-tab like every overlay
             self._exclude_later("DR-Bubble", exclude=False)
@@ -282,27 +293,21 @@ class Overlays:
         y = (s["bubble_y"] if s["bubble_y"] is not None
              else geo["top"] + geo["height"] - h - m)
         self.bubble.evaluate_js(f"setShape({css_w}, {css_h})")
-        hwnd = self._hwnd("DR-Bubble")
-        # shape BEFORE the window enters the screen — no white flash; DWM
-        # rounding must be OFF when a region is active (they fight)
-        if shape == "circle":
-            winapi.dwm_no_round(hwnd)
-            winapi.set_ellipse_region(hwnd, w, h)
-        else:
-            winapi.clear_region(hwnd)
-            winapi.dwm_round_corners(hwnd)
         self.bubble.show()
         self._pin("DR-Bubble", x, y, w, h, self.bubble)
-        if shape == "circle":
-            winapi.set_ellipse_region(hwnd, w, h)   # re-fit after size jiggle
+        self._shape_by_css("DR-Bubble")
         self._bubble_visible = True
         cam_js = camera.replace("\\", "\\\\").replace("'", "\\'")
         self.bubble.evaluate_js(
-            f"startCamera('{cam_js}', {str(blur).lower()})")
+            f"startCamera('{cam_js}', {str(blur).lower()}, "
+            f"{int(s.get('blur_strength', 6))})")
 
-    def set_bubble_blur(self, blur: bool):
+    def set_bubble_blur(self, blur: bool, strength: int | None = None):
         if self.bubble:
-            self.bubble.evaluate_js(f"setBlur({str(blur).lower()})")
+            if strength is None:
+                strength = int(config.load_settings().get("blur_strength", 6))
+            self.bubble.evaluate_js(
+                f"setBlur({str(blur).lower()}, {int(strength)})")
 
     def toggle_bubble_visible(self) -> bool:
         """Camera on/off mid-recording. Returns new visibility."""

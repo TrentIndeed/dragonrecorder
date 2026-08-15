@@ -3,11 +3,15 @@
 <head>
 <meta charset="utf-8">
 <style>
-  /* Opaque page — the WINDOW is clipped to shape by a win32 region, so no
-     transparency games. The bubble is a real window captured from screen;
-     dragging it mid-recording moves it in the video, which is the point. */
+  /* The page is transparent and the SHAPE is CSS. A win32 region cannot do
+     this job: on WebView2 the area a region excludes composites as opaque
+     white (measured over a controlled backdrop), which is the white square
+     that kept reappearing behind the circle. The window is created
+     transparent instead, so only what CSS paints is on screen.
+     The bubble is a real window captured from the screen; dragging it
+     mid-recording moves it in the video, which is the point. */
   * { user-select: none; }
-  html, body { margin: 0; height: 100%; background: #0e0f12; overflow: hidden; }
+  html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; }
   .wrap {
     width: 100%; height: 100%; position: relative; overflow: hidden;
     cursor: grab; background: #0e0f12;
@@ -41,6 +45,7 @@
 
   let stream = null, segmenter = null, blurOn = false, running = false;
   let loadingSegmenter = null;
+  let blurPx = 6;                  // background blur radius, set from settings
 
   const blurCanvas = new OffscreenCanvas(CW, CH);
   const blurCtx = blurCanvas.getContext("2d");
@@ -95,7 +100,7 @@
   }
 
   function drawBlurred(result) {
-    blurCtx.filter = "blur(9px)";
+    blurCtx.filter = `blur(${blurPx}px)`;
     drawFrame(blurCtx);
     blurCtx.filter = "none";
 
@@ -137,7 +142,8 @@
   }
 
   let camGen = 0, starting = false;
-  window.startCamera = async (dshowName, blur) => {
+  window.startCamera = async (dshowName, blur, strength) => {
+    if (strength) blurPx = strength;
     // single-flight: panel-show + record-start can call within ms of each
     // other — a second concurrent getUserMedia would orphan the first
     // stream and pin the camera LED on forever
@@ -176,10 +182,12 @@
     }
   };
 
-  window.setBlur = async (on) => {
+  window.setBlur = async (on, strength) => {
     blurOn = on;
+    if (strength) blurPx = strength;
     if (on) await loadSegmenter();
   };
+  window.setBlurStrength = (px) => { blurPx = px; };
 
   window.stopCamera = () => {
     camGen++;   // invalidates any startCamera still awaiting getUserMedia

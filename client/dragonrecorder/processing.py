@@ -18,7 +18,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from . import api, config, recorder
+from . import api, captions, config, recorder
 from .edits_render import _has_audio, render_cuts
 
 log = logging.getLogger("dr.processing")
@@ -161,7 +161,19 @@ def _ts(t: float) -> str:
     return f"{int(h):02d}:{int(m):02d}:{s:06.3f}"
 
 
-def write_vtt(segments: list[dict], out: Path) -> int:
+def write_vtt(segments: list[dict], out: Path,
+              words: list[dict] | None = None) -> int:
+    """YouTube-shaped cues when word timings exist, whisper segments if not.
+
+    Whisper's segments are far too long to read as captions (one 12-second
+    block of 25 words); captions.chunk_cues re-cuts them into the short,
+    fast-replacing blocks YouTube uses.
+    """
+    if words:
+        cues = captions.chunk_cues(words)
+        if cues:
+            out.write_text(captions.to_vtt(cues), "utf-8")
+            return len(cues)
     lines = ["WEBVTT", ""]
     for seg in segments:
         lines.append(f"{_ts(seg['start'])} --> {_ts(seg['end'])}")
@@ -362,7 +374,7 @@ def run_pipeline(slug: str, video: Path) -> None:
         log.info("speaking pace %.0f wpm → default playback %.2gx", wpm, speed)
         api.set_meta(slug, wpm=round(wpm, 1), default_speed=speed)
     vtt_file = take_dir / "captions.vtt"
-    n_cues = write_vtt(tr["segments"], vtt_file)
+    n_cues = write_vtt(tr["segments"], vtt_file, tr["words"])
     api.upload_asset(slug, "vtt", vtt_file)
 
     # 2. AI title + description

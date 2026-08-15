@@ -49,14 +49,36 @@
       video.pause();
       video.currentTime = 0;
       video.muted = false;
+      applyVolume(parseInt($("vol").value, 10));   // honour the saved level
     }
     video.play();
   };
 
+  // Chrome ignores the `hidden` attribute on inline <svg>, so the icon state
+  // is driven by an explicit display — never by hidden alone.
+  const showIcon = (el, on) => {
+    if (!el) return;
+    el.hidden = !on;
+    el.style.display = on ? "block" : "none";
+  };
   const setPlayingUI = (playing) => {
-    $("icoPlay").hidden = playing;
-    $("icoPause").hidden = !playing;
+    showIcon($("icoPlay"), !playing);
+    showIcon($("icoPause"), playing);
     $("playBtn").setAttribute("aria-label", playing ? "Pause" : "Play");
+    // brief center glyph, the way desktop players confirm a pause/resume
+    if (!previewing) flashCenter(playing ? null : "pause");
+  };
+
+  // center pause indicator: stays up while paused, flashes away on resume
+  const pauseflash = $("pauseflash");
+  let flashTimer;
+  const flashCenter = (kind) => {
+    clearTimeout(flashTimer);
+    if (kind === "pause") {
+      pauseflash.classList.add("show");
+    } else {
+      pauseflash.classList.remove("show");
+    }
   };
   const toggle = () => {
     if (previewing || video.paused) realPlay();
@@ -82,6 +104,63 @@
     showSpeed(speeds[speedIdx]);
   });
 
+  // ---- volume, with boost above 100% ----
+  // Recordings made before the capture chain was loudness-normalised sit
+  // around -23 LUFS, well under the -16 the web expects. video.volume caps
+  // at 1, so anything above 100% routes through a WebAudio gain node — set
+  // up lazily, because creating it before a user gesture leaves it suspended.
+  let audioCtx = null, gainNode = null;
+  const ensureGain = () => {
+    if (gainNode || !window.AudioContext) return gainNode;
+    try {
+      audioCtx = new AudioContext();
+      const src = audioCtx.createMediaElementSource(video);
+      gainNode = audioCtx.createGain();
+      src.connect(gainNode).connect(audioCtx.destination);
+    } catch (e) {
+      audioCtx = gainNode = null;   // fall back to plain video.volume
+    }
+    return gainNode;
+  };
+
+  const volSlider = $("vol");
+  const savedVol = parseInt(localStorage.getItem("dr_vol") ?? "100", 10);
+  let lastVol = savedVol || 100;
+  const applyVolume = (pct) => {
+    const v = pct / 100;
+    video.muted = previewing ? true : pct === 0;
+    if (v > 1) {
+      const g = ensureGain();
+      if (g) {
+        video.volume = 1;
+        g.gain.value = v;
+        if (audioCtx.state === "suspended") audioCtx.resume();
+      } else {
+        video.volume = 1;          // no WebAudio: 100% is the ceiling
+      }
+    } else {
+      if (gainNode) gainNode.gain.value = 1;
+      video.volume = v;
+    }
+    volSlider.value = pct;
+    volSlider.style.setProperty("--fill", `${(pct / 200) * 100}%`);
+    showIcon($("icoVolHigh"), pct >= 50);
+    showIcon($("icoVolLow"), pct > 0 && pct < 50);
+    showIcon($("icoVolMute"), pct === 0);
+    $("volBtn").setAttribute("aria-label", pct === 0 ? "Unmute" : "Mute");
+    localStorage.setItem("dr_vol", String(pct));
+  };
+  volSlider.addEventListener("input", () => {
+    const pct = parseInt(volSlider.value, 10);
+    if (pct > 0) lastVol = pct;
+    applyVolume(pct);
+  });
+  $("volBtn").addEventListener("click", () => {
+    const pct = parseInt(volSlider.value, 10);
+    applyVolume(pct === 0 ? lastVol || 100 : 0);
+  });
+  applyVolume(savedVol);
+
   const ccBtn = $("ccBtn");
   if (ccBtn) {
     const track = video.textTracks[0];
@@ -92,7 +171,30 @@
     apply(ccBtn.getAttribute("aria-pressed") === "true");
     ccBtn.addEventListener("click", () =>
       apply(ccBtn.getAttribute("aria-pressed") !== "true"));
+
+    // Lift cues clear of the control bar, as YouTube does — otherwise the
+    // caption sits under the scrubber on small players.
+    const liftCues = () => {
+      if (!track || !track.cues) return;
+      for (const cue of track.cues) {
+        cue.snapToLines = true;
+        cue.line = -3;
+      }
+    };
+    track?.addEventListener("load", liftCues);
+    video.addEventListener("loadeddata", liftCues);
+    liftCues();
   }
+
+  // Caption size follows the *player* width, not the viewport: the same
+  // clamp that reads well on a 1600px stage is enormous on a phone.
+  const sizeCues = () => {
+    const w = video.clientWidth || 640;
+    const px = Math.max(13, Math.min(30, Math.round(w * 0.021)));
+    document.documentElement.style.setProperty("--cue-size", `${px}px`);
+  };
+  new ResizeObserver(sizeCues).observe(video);
+  sizeCues();
 
   $("fsBtn").addEventListener("click", () => {
     if (document.fullscreenElement) document.exitFullscreen();
@@ -120,6 +222,12 @@
     if (e.key === "ArrowLeft") video.currentTime -= 5;
     if (e.key === "ArrowRight") video.currentTime += 5;
     if (e.key === "f") $("fsBtn").click();
+    if (e.key === "m") $("volBtn").click();
+    if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+      e.preventDefault();
+      const cur = parseInt($("vol").value, 10);
+      applyVolume(Math.max(0, Math.min(200, cur + (e.key === "ArrowUp" ? 10 : -10))));
+    }
   });
 
   // ---- scrub bar with attention histogram ----

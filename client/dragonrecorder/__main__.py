@@ -15,8 +15,15 @@ import time
 # - auto-grant camera/mic (pywebview has no PermissionRequested handler, so
 #   the prompt can't render in a frameless window and capture fails)
 # - no HTTP cache, so overlay pages always load fresh CSS/JS after updates
+# --disable-direct-composition is what makes the round webcam bubble
+# possible: WebView2 normally composites through a DirectComposition visual
+# that SetWindowRgn cannot clip, so the window kept painting a white square
+# around the circle no matter how the region was set. The legacy path draws
+# into the window's redirection surface, which the region does clip. These
+# overlays are a few hundred pixels each, so the compositing cost is moot.
 os.environ.setdefault("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
-                      "--use-fake-ui-for-media-stream --disable-http-cache")
+                      "--use-fake-ui-for-media-stream --disable-http-cache "
+                      "--disable-direct-composition")
 
 import keyboard
 import pystray
@@ -96,8 +103,8 @@ class PanelApi:
         old_mon = cur["monitor"]
         old_shape = cur.get("bubble_shape", "rect")
         old_mic = cur["mic"]
-        cur.update({k: s[k] for k in ("monitor", "camera", "mic", "blur",
-                                      "bubble_shape") if k in s})
+        old_strength = cur.get("blur_strength", 6)
+        cur.update({k: s[k] for k in config.PANEL_KEYS if k in s})
         if "mic" in s and s["mic"] != old_mic:
             # an explicit pick in the card stops the follow-the-default logic
             cur["mic_auto"] = False
@@ -105,6 +112,7 @@ class PanelApi:
             # forget the dragged position: it belongs to the old monitor
             cur["bubble_x"] = cur["bubble_y"] = None
         config.save_settings(cur)
+        log.info("settings saved: %s", {k: cur[k] for k in config.PANEL_KEYS})
         # keep the live preview in sync while the panel is open
         ov = self._app.overlays
         if getattr(ov, "_panel_visible", False):
@@ -117,8 +125,9 @@ class PanelApi:
                 ov.hide_bubble()
                 if cur["camera"]:
                     ov.show_bubble(cur["monitor"], cur["camera"], cur["blur"])
-            elif cur["blur"] != old_blur and cur["camera"]:
-                ov.set_bubble_blur(cur["blur"])
+            elif cur["camera"] and (cur["blur"] != old_blur
+                                    or cur.get("blur_strength") != old_strength):
+                ov.set_bubble_blur(cur["blur"], cur.get("blur_strength", 6))
 
     def start_recording(self):
         # keep the webcam preview up — it becomes the recorded bubble
