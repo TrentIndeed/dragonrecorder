@@ -482,18 +482,26 @@
   };
 
   const pollMeta = async () => {
+    let next = 5000;      // brisk while the pipeline is still landing
     try {
-      const r = await fetch(`/api/w/${slug}/state`);
-      if (r.ok) {
-        const s = await r.json();
-        applyMeta(s);
-        // stop once processing has clearly finished
-        if (s.analyzed && s.title) return;
+      if (!document.hidden) {
+        const r = await fetch(`/api/w/${slug}/state`);
+        if (r.ok) {
+          const s = await r.json();
+          applyMeta(s);
+          // keep watching after processing finishes, just less often, so a
+          // rename or a re-run also shows up on an already-open tab
+          if (s.analyzed && s.title) next = 15000;
+        }
       }
     } catch (e) {}
-    setTimeout(pollMeta, 5000);
+    setTimeout(pollMeta, next);
   };
   setTimeout(pollMeta, 3000);
+  // check straight away when the tab comes back to the front
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) pollMeta();
+  });
 
   // chapters that were already in the page, plus the current-chapter tracker
   // (renderChapters handles both these and any that arrive from the poll)
