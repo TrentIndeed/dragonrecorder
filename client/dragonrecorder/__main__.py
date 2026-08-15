@@ -30,7 +30,7 @@ import pystray
 import webview
 from PIL import Image, ImageDraw
 
-from . import config, devices, session, ui
+from . import api, config, devices, session, ui
 
 logging.basicConfig(
     level=logging.INFO,
@@ -267,6 +267,32 @@ class App:
 
     # ---- background workers ----
 
+    def watch_events_loop(self):
+        """Tray toast when someone finishes watching one of your recordings.
+
+        The high-water mark is on disk, so restarting the app does not
+        re-announce sessions you have already been told about.
+        """
+        marker = config.APPDATA_DIR / "watch_seen.txt"
+        try:
+            since = marker.read_text("utf-8").strip() or None
+        except OSError:
+            since = None
+        while True:
+            time.sleep(60)
+            try:
+                events = api.get_watch_events(since)
+                for e in sorted(events, key=lambda x: x["at"]):
+                    mins, secs = divmod(int(e["watched_s"]), 60)
+                    self.notify(
+                        f"{e['who']} watched {mins}:{secs:02d} ({e['pct']}%)",
+                        e["title"])
+                    since = e["at"]
+                if events:
+                    marker.write_text(since or "", "utf-8")
+            except Exception:
+                log.exception("watch event poll failed")
+
     def cleanup_old_takes(self):
         cutoff = time.time() - LOCAL_KEEP_DAYS * 86400
         for d in config.RECORDINGS_DIR.iterdir():
@@ -312,6 +338,7 @@ class App:
         threading.Thread(target=auto_mic, daemon=True).start()
         threading.Thread(target=self.run_tray, daemon=True).start()
         threading.Thread(target=self.cleanup_old_takes, daemon=True).start()
+        threading.Thread(target=self.watch_events_loop, daemon=True).start()
         # web dashboard "Record a video" button → open the launcher panel
         from . import bridge
 

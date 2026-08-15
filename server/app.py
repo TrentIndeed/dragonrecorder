@@ -687,6 +687,93 @@ def healthz():
     return {"status": "ok", "free_gb": round(free_gb(), 1)}
 
 
+# ---- watch-time summaries -------------------------------------------------
+# The "is watching" ping says someone started; this says how much they
+# actually watched, once their session has gone quiet.
+WATCH_SUMMARY_QUIET_S = 120     # no progress for this long = session over
+WATCH_SUMMARY_MIN_S = 5         # ignore drive-by opens
+
+
+def mmss(seconds: float) -> str:
+    seconds = int(max(0, seconds))
+    return f"{seconds // 60}:{seconds % 60:02d}"
+
+
+def pending_watch_summaries(dbc, mark: bool = True) -> list[dict]:
+    cutoff = iso(utcnow() - timedelta(seconds=WATCH_SUMMARY_QUIET_S))
+    rows = dbc.execute(
+        "SELECT v.slug, v.viewer_id, v.label, v.watched_s, v.max_pos_s,"
+        " v.play_count, r.title, r.duration_s FROM views v"
+        " JOIN recordings r ON r.slug = v.slug"
+        " WHERE v.is_owner=0 AND v.summary_sent_at IS NULL"
+        "   AND v.watched_s >= ? AND v.last_seen < ?",
+        (WATCH_SUMMARY_MIN_S, cutoff)).fetchall()
+    out = []
+    for r in rows:
+        dur = r["duration_s"] or 0
+        out.append({
+            "slug": r["slug"],
+            "who": r["label"] or "someone",
+            "title": r["title"] or r["slug"],
+            "watched_s": round(r["watched_s"], 1),
+            "duration_s": round(dur, 1),
+            "pct": round(100 * r["watched_s"] / dur) if dur else 0,
+            "reached_pct": round(100 * (r["max_pos_s"] or 0) / dur) if dur else 0,
+            "plays": r["play_count"] or 1,
+        })
+        if mark:
+            dbc.execute(
+                "UPDATE views SET summary_sent_at=? WHERE slug=? AND viewer_id=?",
+                (iso(utcnow()), r["slug"], r["viewer_id"]))
+    return out
+
+
+def send_watch_summaries() -> None:
+    with db.connect() as dbc:
+        summaries = pending_watch_summaries(dbc)
+    for s in summaries:
+        send_telegram(
+            f"⏱ {s['who']} watched {mmss(s['watched_s'])}"
+            f" of {mmss(s['duration_s'])} ({s['pct']}%)"
+            f" — reached {s['reached_pct']}%"
+            + (f", {s['plays']} plays" if s["plays"] > 1 else "")
+            + f"\n“{s['title']}”\n{config.PUBLIC_URL}/w/{s['slug']}")
+
+
+async def watch_summary_loop():
+    while True:
+        await asyncio.sleep(60)
+        try:
+            send_watch_summaries()
+        except Exception:
+            log.exception("watch summary loop failed")
+
+
+@app.get("/api/watch-events", dependencies=[Depends(require_token)])
+def watch_events(since: str | None = None):
+    """Recent watch summaries, for the desktop app's tray notifications."""
+    with db.connect() as dbc:
+        rows = dbc.execute(
+            "SELECT v.slug, v.label, v.watched_s, v.max_pos_s, v.play_count,"
+            " v.summary_sent_at, r.title, r.duration_s FROM views v"
+            " JOIN recordings r ON r.slug = v.slug"
+            " WHERE v.is_owner=0 AND v.summary_sent_at IS NOT NULL"
+            "   AND (? IS NULL OR v.summary_sent_at > ?)"
+            " ORDER BY v.summary_sent_at DESC LIMIT 20", (since, since)).fetchall()
+    events = []
+    for r in rows:
+        dur = r["duration_s"] or 0
+        events.append({
+            "slug": r["slug"], "title": r["title"] or r["slug"],
+            "who": r["label"] or "someone",
+            "watched_s": round(r["watched_s"], 1),
+            "duration_s": round(dur, 1),
+            "pct": round(100 * r["watched_s"] / dur) if dur else 0,
+            "at": r["summary_sent_at"],
+        })
+    return {"events": events}
+
+
 async def reaper_loop():
     while True:
         try:
@@ -736,4 +823,5 @@ def reap():
 async def startup():
     db.init_db()
     asyncio.create_task(reaper_loop())
+    asyncio.create_task(watch_summary_loop())
     render.start()

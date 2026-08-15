@@ -82,6 +82,7 @@ MIGRATIONS = {
         "play_count": "INTEGER NOT NULL DEFAULT 0",   # times they pressed play
         "first_play_s": "REAL",                       # seconds from open to play
         "notified_at": "TEXT",   # when a "someone is watching" alert went out
+        "summary_sent_at": "TEXT",   # when their watch-time summary went out
     },
 }
 

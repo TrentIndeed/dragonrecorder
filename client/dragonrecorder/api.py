@@ -108,6 +108,18 @@ def get_render_jobs() -> list[dict]:
         return []
 
 
+def get_watch_events(since: str | None = None) -> list[dict]:
+    """Finished viewing sessions, for tray notifications."""
+    try:
+        with _client() as c:
+            r = c.get("/api/watch-events",
+                      params={"since": since} if since else None)
+            r.raise_for_status()
+            return r.json()["events"]
+    except Exception:
+        return []
+
+
 def report_failure(message: str) -> None:
     """Route client-side failures through the server's Telegram wiring."""
     try:

@@ -219,11 +219,19 @@ def ai_title(transcript: str) -> dict | None:
         return None
     # instruction as a single-line arg (cmd.exe mangles newlines in args),
     # transcript on stdin
+    # Loom-style naming: a short label a person would actually type, not a
+    # description of the video. Judging the content ("no substantive
+    # content") is explicitly out — the title is a name, not a review.
     prompt = (
         "Stdin is the transcript of a screen recording. Reply with ONLY a "
-        'JSON object {"title": ..., "description": ...}. Title: max 60 chars, '
-        "specific, no quotes, sentence case. Description: 1-2 sentences of "
-        "what the recording covers.")
+        'JSON object {"title": ..., "description": ...}. '
+        "Title: 2 to 5 words, like a person naming their own video — "
+        "'Introduction', 'Quick intro', 'Checkout bug walkthrough', "
+        "'Pricing questions'. Sentence case, no quotes, no trailing period, "
+        "no filler like 'screen recording' or 'video'. Never judge or "
+        "editorialise the content (never say things like 'no substantive "
+        "content' or 'brief'); if the clip is only a greeting, name it for "
+        "the greeting. Description: 1-2 plain sentences on what it covers.")
     try:
         r = subprocess.run(
             [*claude, "-p", prompt, "--output-format", "json", "--max-turns", "1"],
