@@ -5,17 +5,24 @@
   max-width: 2100px;
   margin: 0 auto;
   padding: 18px 32px 72px;
+  /* nothing on this page may push the viewport sideways */
+  overflow-x: clip;
 }
 .head { margin-bottom: 14px; }
+/* block, not flex: as a flex container with wrap, a long title becomes one
+   unshrinkable item and pushes the whole page wider than a phone screen */
 .head h1 {
   font-size: 27px;
   font-weight: 700;
   letter-spacing: -0.02em;
   margin: 0 0 3px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
+  overflow-wrap: anywhere;
+}
+.head h1 .pill {
+  vertical-align: middle;
+  margin-left: 8px;
+  position: relative;
+  top: -2px;
 }
 .byline {
   display: flex;
