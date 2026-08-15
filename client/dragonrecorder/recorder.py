@@ -11,6 +11,7 @@ and starts another; stop concatenates the segments losslessly.
 
 import json
 import logging
+import math
 import subprocess
 import time
 from pathlib import Path
@@ -71,6 +72,18 @@ def capture_audio_filter() -> str:
     return "pan=mono|c0=c0+c1"
 
 
+def audio_channels(path: Path) -> int:
+    try:
+        out = subprocess.run(
+            [config.find_ffprobe(), "-v", "quiet", "-select_streams", "a:0",
+             "-show_entries", "stream=channels", "-of", "csv=p=0", str(path)],
+            capture_output=True, text=True, creationflags=CREATE_NO_WINDOW,
+            timeout=60)
+        return int(out.stdout.strip() or 0)
+    except Exception:
+        return 0
+
+
 def clean_audio(video: Path, denoise: bool = True) -> bool:
     """Hum filter, denoise and loudness-normalise a finished take in place.
 
@@ -80,14 +93,24 @@ def clean_audio(video: Path, denoise: bool = True) -> bool:
     single pass undershot by 2.6 LU on a real take).
     """
     ff = config.find_ffmpeg()
-    chain = ["highpass=f=80"]
+    chain = []
+    if audio_channels(video) > 1:
+        # takes recorded before the capture-side fold (or from a device we
+        # did not fold) still carry the voice on one channel only
+        chain.append("pan=mono|c0=c0+c1")
+    chain.append("highpass=f=80")
     if denoise:
         # FFT denoiser trained on the running noise floor — kills steady
         # hiss/hum without the underwater artifacts of aggressive gates
         chain.append("afftdn=nf=-25:tn=1")
+    # speech leveller before the loudness stage: the raw take has a 29 LU
+    # range, so gain alone (blocked by near-0 dBFS transients) lifts it
+    # barely 1.5 LU and quiet passages stay inaudible
+    chain.append("speechnorm=e=6.25:r=0.0001:l=1")
     target = "I=-16:TP=-1.5:LRA=11"
 
-    measured = None
+    measured = None     # two-pass measurements, when they are usable
+    silent = False      # no speech in the take: nothing to normalise
     try:
         probe = subprocess.run(
             [ff, "-hide_banner", "-i", str(video), "-af",
@@ -96,23 +119,43 @@ def clean_audio(video: Path, denoise: bool = True) -> bool:
             capture_output=True, text=True, creationflags=CREATE_NO_WINDOW,
             timeout=600)
         blob = probe.stderr[probe.stderr.rfind("{"):probe.stderr.rfind("}") + 1]
-        measured = json.loads(blob)
+        raw = json.loads(blob)
+        vals = {k: float(raw[k]) for k in
+                ("input_i", "input_tp", "input_lra", "input_thresh",
+                 "target_offset")}
+        # silence measures -inf, which loudnorm rejects outright ("value -inf
+        # out of range") — and there would be nothing to lift anyway
+        if all(math.isfinite(v) for v in vals.values()) and vals["input_i"] > -60:
+            measured = vals
+        else:
+            silent = True
+            log.info("take has no measurable speech (%s LUFS) — skipping "
+                     "loudness normalisation", raw.get("input_i"))
     except Exception:
-        log.warning("loudness measurement failed, using single-pass",
+        log.warning("loudness measurement failed, falling back to one pass",
                     exc_info=True)
 
-    norm = f"loudnorm={target}"
+    filters = list(chain)
     if measured:
-        norm += (f":measured_I={measured['input_i']}"
-                 f":measured_TP={measured['input_tp']}"
-                 f":measured_LRA={measured['input_lra']}"
-                 f":measured_thresh={measured['input_thresh']}"
-                 f":offset={measured['target_offset']}:linear=true")
+        filters.append(
+            f"loudnorm={target}"
+            f":measured_I={measured['input_i']}"
+            f":measured_TP={measured['input_tp']}"
+            f":measured_LRA={measured['input_lra']}"
+            f":measured_thresh={measured['input_thresh']}"
+            f":offset={measured['target_offset']}:linear=true")
+    elif not silent:
+        filters.append(f"loudnorm={target}")
+    filters.append("alimiter=limit=0.95")
+
     out = video.with_name("clean.mp4")
     r = subprocess.run(
+        # dual-mono out: the voice sits centred instead of in one ear, and a
+        # stereo file measures at the loudness target players expect (the
+        # same audio as mono reads ~3 LU quieter to EBU R128)
         [ff, "-hide_banner", "-y", "-i", str(video), "-c:v", "copy",
-         "-af", ",".join(chain + [norm, "alimiter=limit=0.95"]),
-         "-c:a", "aac", "-b:a", "160k", "-ar", "48000",
+         "-af", ",".join(filters),
+         "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-ac", "2",
          "-movflags", "+faststart", str(out)],
         capture_output=True, creationflags=CREATE_NO_WINDOW, timeout=900)
     if r.returncode != 0 or not out.exists() or out.stat().st_size == 0:
