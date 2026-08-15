@@ -196,22 +196,18 @@ class Overlays:
         with self._lock:
             if self.toolbar:
                 return
-            # Transparent, because the window cannot actually be as narrow as
-            # the bar: Windows clamps these windows to 200px wide, so an
-            # opaque one paints a 200px slab around a 56px toolbar (that was
-            # the "bar extends into a larger rectangle" glitch). The page
-            # already draws on a transparent body, so keying the rest out
-            # leaves just the bar — and gives its tooltips room to show.
-            # NOT hidden=True, and never SW_HIDE'd: pywebview needs a real
-            # show for transparency to take, and a hidden transparent window
-            # comes back as a black slab. Parked off-screen instead.
+            # Opaque on purpose. Colour-keyed transparency would make the
+            # whole bar click-through — the surface under the WebView2 child
+            # IS the key colour, so every button stopped responding. The
+            # slab it used to paint is solved by pinning the window to its
+            # real 60px width (see winapi.force_rect_topmost), not by
+            # keying it out. Parked rather than SW_HIDE'd.
             self.toolbar = webview.create_window(
                 "DR-Toolbar", _url("toolbar.html"), js_api=js_api,
                 x=-4000, y=0,
                 width=TOOLBAR_W, height=TOOLBAR_H, frameless=True,
                 on_top=True, resizable=False, focus=False,
-                easy_drag=False, transparent=True,
-                background_color="#101114")
+                easy_drag=False, background_color="#101114")
             self._exclude_later("DR-Toolbar")
 
     def show_toolbar(self, monitor: int):
@@ -221,7 +217,8 @@ class Overlays:
         y = geo["top"] + (geo["height"] - TOOLBAR_H) // 2
         self.toolbar.show()
         self._pin("DR-Toolbar", x, y, TOOLBAR_W, TOOLBAR_H, self.toolbar)
-        self._shape_by_css("DR-Toolbar")
+        winapi.clear_region(self._hwnd("DR-Toolbar"))
+        winapi.dwm_round_corners(self._hwnd("DR-Toolbar"))
 
     def hide_toolbar(self):
         if self.toolbar:

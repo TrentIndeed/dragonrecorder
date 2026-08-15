@@ -60,6 +60,8 @@
   const maskCtx = maskCanvas.getContext("2d");
   const smallCanvas = new OffscreenCanvas(64, 64);   // downscaled background
   const smallCtx = smallCanvas.getContext("2d");
+  const dilateCanvas = new OffscreenCanvas(64, 64);  // grown person mask
+  const dilateCtx = dilateCanvas.getContext("2d");
   let maskImageData = null;
 
   const SHADOW = 10;               // gap around the shape, for the shadow
@@ -119,8 +121,14 @@
   // as a shimmering halo, so it is smoothed over time; the alpha ramp is
   // kept narrow so the person's edge stays crisp instead of dissolving.
   let prevMask = null;
-  const SMOOTH = 0.6;        // share of the previous frame's mask retained
+  // Asymmetric smoothing: claim a pixel as "person" almost immediately, let
+  // go of it slowly. Symmetric smoothing made the mask trail behind a moving
+  // head, so the leading edge — the side of the face and the ears — dropped
+  // out of the mask and got blurred.
+  const RISE = 0.25;         // weight kept from the previous frame when
+  const FALL = 0.85;         // ...gaining vs losing coverage
   const EDGE = 0.5;          // alpha midpoint
+  const DILATE = 3;          // mask pixels to grow the person by
 
   function drawBlurred(result) {
     // Background blur: downscale once, blur lightly, scale back. Blurring a
@@ -154,17 +162,35 @@
       // category 0 is background; hair, skin, clothes and accessories are
       // all "person", which is why this follows a hairline properly
       const target = cats[i] === 0 ? 0 : 1;
-      const v = prevMask[i] * SMOOTH + target * (1 - SMOOTH);
+      const keep = target > prevMask[i] ? RISE : FALL;
+      const v = prevMask[i] * keep + target * (1 - keep);
       prevMask[i] = v;
       // narrow ramp around the midpoint: a definite edge, not a fade
       let a = (v - EDGE) * 6 + 0.5;
       px[i * 4 + 3] = (a < 0 ? 0 : a > 1 ? 1 : a) * 255;
     }
     maskCtx.putImageData(maskImageData, 0, 0);
+
+    // Grow the mask a few pixels before using it. The model's edge sits
+    // just inside the person, so an exact mask shaves the rim of an ear or
+    // a cheek into the blurred background; better to keep a sliver of
+    // background sharp than to blur part of a face.
+    if (dilateCanvas.width !== mw) {
+      dilateCanvas.width = mw; dilateCanvas.height = mh;
+    }
+    dilateCtx.clearRect(0, 0, mw, mh);
+    dilateCtx.globalCompositeOperation = "lighter";
+    for (let dx = -DILATE; dx <= DILATE; dx += DILATE) {
+      for (let dy = -DILATE; dy <= DILATE; dy += DILATE) {
+        dilateCtx.drawImage(maskCanvas, dx, dy);
+      }
+    }
+    dilateCtx.globalCompositeOperation = "source-over";
+
     personCtx.globalCompositeOperation = "destination-in";
     // just enough feather to hide mask pixelation at this scale
     personCtx.filter = `blur(${Math.max(1, CW / 260)}px)`;
-    personCtx.drawImage(maskCanvas, 0, 0, CW, CH);
+    personCtx.drawImage(dilateCanvas, 0, 0, CW, CH);
     personCtx.filter = "none";
     personCtx.globalCompositeOperation = "source-over";
 

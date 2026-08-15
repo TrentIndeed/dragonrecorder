@@ -168,15 +168,23 @@ def hide_window(hwnd: int) -> None:
         user32.ShowWindow(wt.HWND(hwnd), 0)
 
 
+SWP_NOSENDCHANGING = 0x0400
+
+
 def force_rect_topmost(hwnd: int, x: int, y: int, w: int, h: int) -> None:
     """Pin a window to an exact rect and keep it topmost. pywebview's
     frameless windows come out smaller than requested (it subtracts standard
     window decorations that frameless windows don't have) and can lose their
-    topmost bit across hide/show — this fixes both in one call."""
+    topmost bit across hide/show — this fixes both in one call.
+
+    SWP_NOSENDCHANGING skips WM_WINDOWPOSCHANGING, which is where these
+    windows enforce a 200px minimum width. The toolbar is 60px wide, and
+    without this it silently became a 200px slab painted around a 56px bar.
+    """
     if not hwnd:
         return
     user32.SetWindowPos(wt.HWND(hwnd), wt.HWND(HWND_TOPMOST), x, y, w, h,
-                        SWP_NOACTIVATE | SWP_SHOWWINDOW)
+                        SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_NOSENDCHANGING)
 
 
 WS_EX_APPWINDOW = 0x00040000
