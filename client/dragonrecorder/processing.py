@@ -213,6 +213,40 @@ def write_vtt(segments: list[dict], out: Path,
     return len(segments)
 
 
+PEAK_BUCKETS = 1200       # enough detail for a strip a few hundred px wide
+
+
+def make_peaks(video: Path, duration: float) -> Path | None:
+    """Waveform summary of the take, for the cut-preview strip on the page.
+
+    Decodes to low-rate mono PCM and keeps the loudest sample per bucket —
+    peaks, not averages, so short words still show up as bumps.
+    """
+    if not duration:
+        return None
+    out = video.with_name("peaks.json")
+    r = subprocess.run(
+        [config.find_ffmpeg(), "-hide_banner", "-v", "quiet", "-i", str(video),
+         "-vn", "-ac", "1", "-ar", "8000", "-f", "s16le", "-"],
+        capture_output=True, creationflags=CREATE_NO_WINDOW, timeout=600)
+    if r.returncode != 0 or not r.stdout:
+        log.warning("peaks: could not decode audio")
+        return None
+    import array
+    samples = array.array("h")
+    samples.frombytes(r.stdout[:len(r.stdout) // 2 * 2])
+    if not samples:
+        return None
+    per = max(1, len(samples) // PEAK_BUCKETS)
+    peaks = []
+    for i in range(0, len(samples), per):
+        chunk = samples[i:i + per]
+        peaks.append(round(max(abs(min(chunk)), abs(max(chunk))) / 32768, 3))
+    out.write_text(json.dumps({"duration": round(duration, 3),
+                               "peaks": peaks[:PEAK_BUCKETS]}), "utf-8")
+    return out
+
+
 def make_thumbnail(video: Path, duration: float) -> Path | None:
     thumb = video.with_name("thumb.jpg")
     at = max(0.0, min(duration * 0.2, duration - 0.5)) if duration else 0.0
@@ -430,6 +464,10 @@ def run_pipeline(slug: str, video: Path) -> None:
     thumb = make_thumbnail(video, duration)
     if thumb:
         api.upload_asset(slug, "thumb", thumb)
+    # waveform for the strip that shows which parts the cuts remove
+    peaks = make_peaks(video, duration)
+    if peaks:
+        api.upload_asset(slug, "peaks", peaks)
 
     # 4. edit detection — always registered, even at count 0, so the panel
     #    can show "0 found" (proof the detector ran) instead of hiding it

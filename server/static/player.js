@@ -434,6 +434,52 @@
     });
   }
 
+  // ---- waveform strip: shows what the enabled cuts take out ----
+  // Peaks are of the ORIGINAL take, so the shaded regions line up with the
+  // cut list even though the video playing is already the edited render.
+  let peaksData = null;
+  let cutRegions = [];
+
+  const drawWave = () => {
+    const strip = $("waveStrip");
+    if (!peaksData || !cutRegions.length) { strip.hidden = true; return; }
+    strip.hidden = false;
+    const cv = $("waveCanvas");
+    const cssW = cv.clientWidth || 600;
+    const cssH = cv.clientHeight || 56;
+    cv.width = cssW * devicePixelRatio;
+    cv.height = cssH * devicePixelRatio;
+    const g = cv.getContext("2d");
+    g.scale(devicePixelRatio, devicePixelRatio);
+    g.clearRect(0, 0, cssW, cssH);
+    const peaks = peaksData.peaks;
+    const dur = peaksData.duration || window.DR.duration || 1;
+    const mid = cssH / 2;
+    const barW = Math.max(1, cssW / peaks.length);
+    const accent = getComputedStyle(document.documentElement)
+      .getPropertyValue("--accent").trim() || "#2c6bff";
+    const isCut = (t) => cutRegions.some(([s, e]) => t >= s && t <= e);
+    for (let i = 0; i < peaks.length; i++) {
+      const t = (i / peaks.length) * dur;
+      const h = Math.max(1.5, peaks[i] * (cssH - 6));
+      g.fillStyle = isCut(t) ? "#9aa3b2" : accent;
+      g.fillRect(i * barW, mid - h / 2, Math.max(1, barW - 0.5), h);
+    }
+    const removed = cutRegions.reduce((a, [s, e]) => a + (e - s), 0);
+    $("waveNote").textContent =
+      `${fmt(removed)} removed of ${fmt(dur)}`;
+  };
+  new ResizeObserver(drawWave).observe($("waveStrip"));
+
+  const loadPeaks = async () => {
+    if (peaksData) return peaksData;
+    try {
+      const r = await fetch(`/media/${slug}/peaks.json`);
+      if (r.ok) peaksData = await r.json();
+    } catch (e) {}
+    return peaksData;
+  };
+
   // ---- owner rail (edit toggles + activity), Loom's video-page layout ----
   const EDIT_LABELS = {
     fillers: ["Remove filler words", "filler word"],
@@ -549,6 +595,20 @@
         });
         box.appendChild(row);
       }
+
+      // waveform of what the enabled cuts remove
+      cutRegions = [];
+      for (const kind of ["fillers", "silences"]) {
+        const e = byKind[kind];
+        if (!e || !e.enabled || !e.data) continue;
+        try {
+          const parsed = JSON.parse(e.data);
+          const list = Array.isArray(parsed) ? parsed : parsed.cuts || [];
+          cutRegions.push(...list);
+        } catch (err) {}
+      }
+      if (cutRegions.length) await loadPeaks();
+      drawWave();
 
       // ---- analytics summary ----
       const a = d.analytics || {};

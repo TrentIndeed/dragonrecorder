@@ -33,7 +33,8 @@ templates.env.globals["v"] = int(_time.time())
 SLUG_ALPHABET = string.ascii_letters + string.digits
 CUT_KINDS = ("fillers", "silences")  # kinds whose toggle requires a derived render
 ALL_EDIT_KINDS = ("fillers", "silences", "captions")
-ASSET_FILES = {"thumb": "thumb.jpg", "vtt": "captions.vtt", "words": "words.json"}
+ASSET_FILES = {"thumb": "thumb.jpg", "vtt": "captions.vtt", "words": "words.json",
+               "peaks": "peaks.json"}   # waveform for the cut-preview strip
 REACTION_EMOJI = ["👍", "❤️", "🔥", "😂", "🤯"]
 
 

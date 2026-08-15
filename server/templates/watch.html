@@ -33,6 +33,15 @@
     </div>
   </header>
 
+  <!-- waveform of the original take, with the removed parts shaded; shown
+       only when a cut edit is switched on -->
+  <div class="wavestrip" id="waveStrip" hidden>
+    <canvas id="waveCanvas" height="56"></canvas>
+    <div class="wavelegend">
+      <span class="swatch cut"></span><span id="waveNote">removed</span>
+    </div>
+  </div>
+
   <div class="layout">
   <div class="left">
   <div class="stage" id="stage">
