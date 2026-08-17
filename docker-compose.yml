@@ -2,6 +2,13 @@ services:
   dragonrecorder:
     build: ./server
     restart: unless-stopped
+    # This box also runs n8n, dragonoperator and the super app. Rendering a
+    # cut edit is an x264 encode, which will happily take every core and
+    # starve everything else on the host — so the container gets a hard
+    # ceiling. One core is plenty: renders are background work, nobody is
+    # waiting on the frame rate.
+    cpus: 1.0
+    mem_limit: 1500m
     # Caddy fronts everything; keep the app loopback-only on the host.
     ports:
       - "127.0.0.1:8082:8080"

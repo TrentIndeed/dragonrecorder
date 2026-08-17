@@ -12,6 +12,7 @@ and a parallel pile of x264 jobs would starve it.
 
 import json
 import logging
+import os
 import shutil
 import subprocess
 import threading
@@ -28,6 +29,11 @@ MIN_KEEP_S = 0.12          # drop keep-slivers shorter than this between cuts
 IDLE_POLL_S = 300          # backstop; toggles wake the worker immediately
 
 wake = threading.Event()
+
+
+def _be_nice() -> None:
+    """Drop the encoder to the lowest scheduling priority (POSIX only)."""
+    os.nice(19)
 
 
 def ffmpeg() -> str:
@@ -101,11 +107,20 @@ def render_cuts(video: Path, out: Path, cuts: list[list[float]]) -> None:
     if has_audio(video):
         cmd += ["-af", f"aselect='{expr}',asetpts=N/SR/TB",
                 "-c:a", "aac", "-b:a", "160k"]
-    cmd += ["-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+    # This box is a 2 GB shared instance that also runs n8n, the dashboard
+    # and the proposal app. An unrestrained veryfast encode drove the load
+    # average to 75 and took the whole machine off the network for twenty
+    # minutes on a forty-second clip. So: cheapest preset, two threads,
+    # lowest priority, and a hard 1-CPU ceiling on the container itself.
+    # This file is a derived convenience copy — the original is untouched,
+    # so trading some bitrate for a machine that stays responsive is easy.
+    cmd += ["-threads", "2",
+            "-c:v", "libx264", "-preset", "ultrafast", "-crf", "24",
             "-pix_fmt", "yuv420p", "-movflags", "+faststart", str(out)]
     tmp = out.with_suffix(".part.mp4")
     cmd[-1] = str(tmp)
-    r = subprocess.run(cmd, capture_output=True, timeout=3 * 3600)
+    r = subprocess.run(cmd, capture_output=True, timeout=3 * 3600,
+                       preexec_fn=_be_nice if os.name == "posix" else None)
     if r.returncode != 0 or not tmp.exists() or tmp.stat().st_size == 0:
         tmp.unlink(missing_ok=True)
         raise RuntimeError("ffmpeg failed: "
