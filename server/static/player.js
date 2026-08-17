@@ -723,11 +723,24 @@
           <span class="cnt num">${e == null ? "not analyzed"
             : (e.count ? `${e.count} found` : "none found")}</span>`;
         row.querySelector("input").addEventListener("change", async (ev) => {
-          await fetch(`/api/dash/recordings/${slug}/edits/${kind}`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ enabled: ev.target.checked }),
-          });
+          // The box was unreachable once and this silently did nothing: the
+          // checkbox stayed ticked while the server still had the edit off,
+          // so it looked like the edit "did not apply". Put the tick back
+          // and say so if the request does not land.
+          const wanted = ev.target.checked;
+          try {
+            const res = await fetch(
+              `/api/dash/recordings/${slug}/edits/${kind}`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ enabled: wanted }),
+              });
+            if (!res.ok) throw new Error(res.status);
+          } catch (err) {
+            ev.target.checked = !wanted;
+            ptoast("Couldn't save that — the server didn't respond");
+            return;
+          }
           // poke the local recorder to render right now (works when this
           // browser runs on the recording machine; harmless elsewhere)
           fetch("http://127.0.0.1:8477/render", { method: "POST" })

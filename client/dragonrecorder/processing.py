@@ -27,7 +27,10 @@ CREATE_NO_WINDOW = 0x08000000
 FILLERS = {"um", "umm", "ummm", "uh", "uhh", "uhm", "ah", "ahh", "er", "erm",
            "hmm", "hm", "mhm", "mm", "like"}
 FILLER_BIGRAMS = {("you", "know"), ("i", "mean"), ("sort", "of"), ("kind", "of")}
-MIN_SILENCE_S = 1.0
+# Tuned against a real 40.7s take: 12 stretches of measurable quiet
+# totalling 13.6s, of which these settings remove 7.5s across 6 cuts with
+# nothing audible inside any of them (loudest 0.035 against a 0.040 floor).
+MIN_SILENCE_S = 0.5       # shortest pause worth removing
 # Two different jobs, so two constants. For a silence the pad SHRINKS the
 # cut, and it has to be generous: whisper's segment ends land early (its VAD
 # trims the decay of the last word), so a 50 ms margin was slicing the tail
@@ -35,7 +38,7 @@ MIN_SILENCE_S = 1.0
 # cut, so it stays tight or it eats the neighbouring words.
 SILENCE_PAD_S = 0.25
 FILLER_PAD_S = 0.05
-MIN_CUT_S = 0.30          # not worth a splice below this
+MIN_CUT_S = 0.25          # not worth a splice below this
 
 _model = None
 _model_cpu_only = False
@@ -137,16 +140,25 @@ def detect_silences(segments: list[dict], duration: float,
     return cuts
 
 
-QUIET_RATIO = 0.06        # share of the loudest peak that still counts as quiet
+QUIET_RATIO = 0.08        # of the speech level, below which audio is "quiet"
+QUIET_ABS_FLOOR = 0.008   # and never treat anything above this as silence
+SPEECH_PAD_S = 0.12       # breathing room kept around speech
 
 
-def quiet_regions(peaks_data: dict) -> list[list[float]]:
-    """Stretches that are actually quiet, measured from the audio itself."""
+def quiet_regions(peaks_data: dict, min_len: float = 0.0) -> list[list[float]]:
+    """Stretches that are actually quiet, measured from the audio itself.
+
+    The threshold is a share of the *speech* level (90th percentile of the
+    peaks), not of the single loudest sample — one door slam or clipped
+    plosive would otherwise drag the threshold up and swallow quiet speech.
+    """
     peaks = peaks_data.get("peaks") or []
     dur = peaks_data.get("duration") or 0
     if not peaks or not dur:
         return []
-    floor = max(peaks) * QUIET_RATIO
+    ordered = sorted(peaks)
+    speech = ordered[int(len(ordered) * 0.9)] or max(peaks)
+    floor = max(QUIET_ABS_FLOOR, speech * QUIET_RATIO)
     step = dur / len(peaks)
     out, run_start = [], None
     for i, p in enumerate(peaks):
@@ -154,11 +166,78 @@ def quiet_regions(peaks_data: dict) -> list[list[float]]:
             if run_start is None:
                 run_start = i * step
         elif run_start is not None:
-            out.append([run_start, i * step])
+            if i * step - run_start >= min_len:
+                out.append([run_start, i * step])
             run_start = None
-    if run_start is not None:
+    if run_start is not None and dur - run_start >= min_len:
         out.append([run_start, dur])
     return out
+
+
+def subtract(regions: list[list[float]],
+             holes: list[list[float]]) -> list[list[float]]:
+    """regions minus holes, both sorted lists of [start, end]."""
+    out = []
+    for s, e in regions:
+        cur = s
+        for hs, he in holes:
+            if he <= cur or hs >= e:
+                continue
+            if hs > cur:
+                out.append([cur, min(hs, e)])
+            cur = max(cur, he)
+            if cur >= e:
+                break
+        if cur < e:
+            out.append([cur, e])
+    return [r for r in out if r[1] > r[0]]
+
+
+def merge_regions(regions: list[list[float]]) -> list[list[float]]:
+    out: list[list[float]] = []
+    for s, e in sorted(regions):
+        if out and s <= out[-1][1]:
+            out[-1][1] = max(out[-1][1], e)
+        else:
+            out.append([s, e])
+    return out
+
+
+def detect_silences_from_audio(peaks_data: dict, words: list[dict],
+                               duration: float) -> list[list[float]]:
+    """Silences measured from the waveform, with speech protected by words.
+
+    Transcript gaps (what this used to use, and what dragonEditor uses) only
+    see pauses long enough to split whisper's VAD — 800 ms by default — so
+    every ordinary breath and beat inside a segment stayed in the video. On
+    a real 40s take that was 5.3s found against 13.6s actually silent.
+
+    Reading the audio finds all of them; subtracting a pad around every
+    known word is what keeps the cuts off the speech.
+    """
+    quiet = quiet_regions(peaks_data, min_len=MIN_SILENCE_S)
+    if not quiet:
+        return []
+    # The two sides need different treatment, which took measuring to get
+    # right:
+    #
+    # - Onsets are sacred. A softly-spoken word ("So...") begins below the
+    #   quiet floor, so the energy scan runs straight through it. A cut
+    #   therefore never crosses the start of the next word.
+    # - Decays need only a pad. Whisper stretches a word's end to wherever
+    #   the next one starts, so honouring that end cost 0.35s at the front
+    #   of every pause and left nothing to cut. Where the audio drops below
+    #   the floor IS the end of the decay; anything after it is inaudible.
+    starts = sorted(w["start"] for w in words or [])
+    cuts = []
+    for s, e in quiet:
+        s += SPEECH_PAD_S
+        next_start = min((x for x in starts if x >= s), default=None)
+        e = min(e - SPEECH_PAD_S, (next_start - SPEECH_PAD_S)
+                if next_start is not None else e)
+        if e - s >= MIN_CUT_S:
+            cuts.append([round(s, 3), round(e, 3)])
+    return cuts
 
 
 def intersect(a: list[list[float]], b: list[list[float]],
@@ -175,30 +254,6 @@ def intersect(a: list[list[float]], b: list[list[float]],
         else:
             j += 1
     return out
-
-
-def refine_silences(cuts: list[list[float]],
-                    peaks_data: dict | None) -> list[list[float]]:
-    """Only cut where the transcript AND the waveform agree it is silent.
-
-    Whisper's VAD drops anything it does not read as speech, so a stretch of
-    real audio it skipped — a cough, a keyboard, a sentence it missed — looks
-    like a gap and was being cut out. Intersecting with measured quiet keeps
-    audible content in the video.
-    """
-    if not peaks_data or not cuts:
-        return cuts
-    quiet = quiet_regions(peaks_data)
-    if not quiet:
-        return cuts
-    # a refined piece still has to be a real pause, or removing it just
-    # chops half-second holes between bursts of audio
-    refined = intersect(cuts, quiet, min_len=MIN_SILENCE_S)
-    dropped = sum(e - s for s, e in cuts) - sum(e - s for s, e in refined)
-    if dropped > 0.05:
-        log.info("silence cuts trimmed by %.1fs - that audio was not silent",
-                 dropped)
-    return refined
 
 
 def detect_fillers(words: list[dict]) -> list[list[float]]:
@@ -277,7 +332,11 @@ def write_vtt(segments: list[dict], out: Path,
     return len(segments)
 
 
-PEAK_BUCKETS = 1200       # enough detail for a strip a few hundred px wide
+# 20 buckets a second: 50 ms resolution, which is what silence
+# detection needs. A fixed 1200 meant half-second buckets on a
+# ten-minute recording — far too coarse to find a pause.
+PEAKS_PER_SEC = 20
+PEAK_MIN, PEAK_MAX = 600, 12000
 
 
 def make_peaks(video: Path, duration: float) -> Path | None:
@@ -301,13 +360,14 @@ def make_peaks(video: Path, duration: float) -> Path | None:
     samples.frombytes(r.stdout[:len(r.stdout) // 2 * 2])
     if not samples:
         return None
-    per = max(1, len(samples) // PEAK_BUCKETS)
+    buckets = int(min(PEAK_MAX, max(PEAK_MIN, duration * PEAKS_PER_SEC)))
+    per = max(1, len(samples) // buckets)
     peaks = []
     for i in range(0, len(samples), per):
         chunk = samples[i:i + per]
         peaks.append(round(max(abs(min(chunk)), abs(max(chunk))) / 32768, 3))
     out.write_text(json.dumps({"duration": round(duration, 3),
-                               "peaks": peaks[:PEAK_BUCKETS]}), "utf-8")
+                               "peaks": peaks[:buckets]}), "utf-8")
     return out
 
 
@@ -571,15 +631,20 @@ def run_pipeline(slug: str, video: Path) -> None:
     # 4. edit detection — always registered, even at count 0, so the panel
     #    can show "0 found" (proof the detector ran) instead of hiding it
     auto = step("auto-apply settings", api.get_auto_apply) or {}
-    silence_cuts = step("silence detection", detect_silences,
-                        tr["segments"], duration, tr["words"]) or []
-    # keep anything the waveform says is audible, whatever whisper thought
-    if peaks and silence_cuts:
-        try:
-            silence_cuts = refine_silences(
-                silence_cuts, json.loads(peaks.read_text("utf-8")))
-        except (OSError, ValueError):
-            log.warning("could not read peaks for silence refinement")
+    # Silences come from the waveform when we have it — transcript gaps only
+    # see pauses long enough to split whisper's VAD, which missed two thirds
+    # of the real ones. The gap method stays as the fallback.
+    silence_cuts = None
+    if peaks:
+        def from_audio():
+            data = json.loads(peaks.read_text("utf-8"))
+            return detect_silences_from_audio(data, tr["words"], duration)
+        silence_cuts = step("silence detection (audio)", from_audio)
+    if silence_cuts is None:
+        silence_cuts = step("silence detection (gaps)", detect_silences,
+                            tr["segments"], duration, tr["words"]) or []
+    log.info("silences: %d cuts removing %.1fs of %.1fs", len(silence_cuts),
+             sum(e - s for s, e in silence_cuts), duration)
     filler_cuts = step("filler detection", detect_fillers, tr["words"]) or []
     detections = {
         "fillers": filler_cuts,
