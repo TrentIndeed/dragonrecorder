@@ -43,19 +43,23 @@ DEFAULT_SETTINGS = {
     "camera": "",          # dshow device name, "" = none
     "mic": "",             # dshow device name, "" = none
     "mic_auto": True,      # True: follow the Windows default device
-    "mic_denoise": True,   # hum/hiss filter on the captured mic
+    # FFT denoise, off by default: it costs more in artifacts than the
+    # quiet hiss it removes, and the SSL 2's noise floor is already low
+    "mic_denoise": False,
     "blur": False,
     "blur_strength": 3,    # background blur radius in px (1-10)
     "bubble_shape": "rect",   # "rect" (rounded rectangle) or "circle"
     "bubble_scale": 80,    # camera bubble size, percent (50-160)
     "fps": 30,
-    # How far ahead of the video the mic runs, in ms — see recorder._cmd.
-    # 215, not the 260 the probe suggested: the probe plays its tone through
-    # the speakers, so its reading includes ~40 ms of output latency and a
-    # "perfect" measurement actually leaves audio running slightly early.
-    # Ears notice audio arriving early at ~45 ms but tolerate it arriving
-    # late to ~125 ms, so the target is a small positive lag.
-    "av_offset_ms": 215,
+    # How far ahead of the video the mic runs, in ms - see recorder._cmd.
+    # Re-measured after the capture buffer went 50 -> 120 ms (the 50 ms one
+    # was starving the USB interface and punching holes in the audio):
+    # three probe runs at this value read +225/+43/+45 ms, median +45. The
+    # probe plays its tone through the speakers, so it over-reads by ~30 ms
+    # of output latency - true sync is near zero, and erring late is the
+    # safe direction (ears catch audio arriving early at ~45 ms but tolerate
+    # it late to ~125 ms).
+    "av_offset_ms": 260,
     "start_sound": True,   # audible cue when capture actually begins
     # after a take: close the recorder UI and open the video in the browser
     "open_after_record": True,

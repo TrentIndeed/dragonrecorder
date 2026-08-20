@@ -12,6 +12,7 @@ and starts another; stop concatenates the segments losslessly.
 import json
 import logging
 import math
+import re
 import subprocess
 import time
 from pathlib import Path
@@ -84,72 +85,79 @@ def audio_channels(path: Path) -> int:
         return 0
 
 
-def clean_audio(video: Path, denoise: bool = True) -> bool:
-    """Hum filter, denoise and loudness-normalise a finished take in place.
+def _loudness(video: Path, chain: str) -> dict | None:
+    """EBU R128 of the audio after `chain`: integrated, range, true peak."""
+    r = subprocess.run(
+        [config.find_ffmpeg(), "-hide_banner", "-i", str(video), "-af",
+         f"{chain},ebur128=peak=true:framelog=quiet", "-f", "null", "-"],
+        capture_output=True, text=True, creationflags=CREATE_NO_WINDOW,
+        timeout=900)
 
-    Runs offline with `-c:v copy`, so the video is never re-encoded and the
-    cost is a few seconds of audio processing. Two passes: measure, then
-    correct with those measurements, which hits the target properly (a
-    single pass undershot by 2.6 LU on a real take).
+    def grab(pattern):
+        m = re.search(pattern, r.stderr)
+        return float(m.group(1)) if m else None
+
+    i = grab(r"I:\s+(-?[\d.]+) LUFS")
+    if i is None or not math.isfinite(i) or i < -60:
+        return None            # silence: nothing to measure or lift
+    return {"I": i, "LRA": grab(r"LRA:\s+(-?[\d.]+) LU") or 0.0,
+            "TP": grab(r"Peak:\s+(-?[\d.]+) dBFS") or 0.0}
+
+
+TARGET_LUFS = -16.0       # what the web expects
+WIDE_LRA = 15.0           # above this, even out the range before lifting
+
+
+def clean_audio(video: Path, denoise: bool = False) -> bool:
+    """Clean up and level a finished take, in place.
+
+    Deliberately NOT ffmpeg's loudnorm. Asked to hit a target it runs in
+    "Normalization Type: Dynamic" — time-varying gain that flattened a real
+    take to 3.9 LU of range and is what made the voice sound processed
+    rather than recorded. Measuring first and then applying ONE static gain
+    leaves the performance intact; a limiter catches the odd transient.
+
+    Compression is applied only when the take actually needs it (a wide
+    range means quiet passages would be inaudible after a flat lift), so a
+    well-recorded interface like the SSL 2 passes through untouched apart
+    from the gain.
+
+    Runs offline with -c:v copy, so the video is never re-encoded.
     """
     ff = config.find_ffmpeg()
     chain = []
     if audio_channels(video) > 1:
-        # takes recorded before the capture-side fold (or from a device we
-        # did not fold) still carry the voice on one channel only
+        # takes from before the capture-side fold still carry the voice on
+        # one channel only
         chain.append("pan=mono|c0=c0+c1")
-    chain.append("highpass=f=80")
+    chain.append("highpass=f=80")          # mains hum, desk rumble, HVAC
     if denoise:
-        # Gentler than it was: nf=-25 chased the noise floor hard enough to
-        # leave the "musical noise" that makes processed voice sound
-        # underwater. -20 takes the hiss off and leaves the voice alone.
+        # off by default: the FFT denoiser leaves "musical noise" that is
+        # more objectionable than the quiet hiss it removes
         chain.append("afftdn=nf=-20:tn=1")
-    # A gentle compressor, not speechnorm. speechnorm is an adaptive gain
-    # and audibly breathes on speech; a 2.5:1 compressor does the same job
-    # (the raw take has a 29 LU range, so something has to even it out)
-    # without that pumping. Measured on a real take: LRA 11.5 vs 10.4 and
-    # more presence retained in the 3-8 kHz band.
-    chain.append("acompressor=threshold=-20dB:ratio=2.5:attack=10:release=200")
-    target = "I=-16:TP=-1.5:LRA=11"
 
-    measured = None     # two-pass measurements, when they are usable
-    silent = False      # no speech in the take: nothing to normalise
-    try:
-        probe = subprocess.run(
-            [ff, "-hide_banner", "-i", str(video), "-af",
-             ",".join(chain + [f"loudnorm={target}:print_format=json"]),
-             "-f", "null", "-"],
-            capture_output=True, text=True, creationflags=CREATE_NO_WINDOW,
-            timeout=600)
-        blob = probe.stderr[probe.stderr.rfind("{"):probe.stderr.rfind("}") + 1]
-        raw = json.loads(blob)
-        vals = {k: float(raw[k]) for k in
-                ("input_i", "input_tp", "input_lra", "input_thresh",
-                 "target_offset")}
-        # silence measures -inf, which loudnorm rejects outright ("value -inf
-        # out of range") — and there would be nothing to lift anyway
-        if all(math.isfinite(v) for v in vals.values()) and vals["input_i"] > -60:
-            measured = vals
-        else:
-            silent = True
-            log.info("take has no measurable speech (%s LUFS) - skipping "
-                     "loudness normalisation", raw.get("input_i"))
-    except Exception:
-        log.warning("loudness measurement failed, falling back to one pass",
-                    exc_info=True)
+    measured = _loudness(video, ",".join(chain))
+    if measured is None:
+        log.info("take has no measurable speech - leaving the audio alone")
+        return True
 
+    if measured["LRA"] > WIDE_LRA:
+        chain.append("acompressor=threshold=-22dB:ratio=2.5:attack=15:"
+                     "release=250:makeup=3")
+        after = _loudness(video, ",".join(chain))
+        if after:
+            measured = after
+        log.info("range was %.1f LU - evening it out before the lift",
+                 measured["LRA"])
+
+    gain = TARGET_LUFS - measured["I"]
+    gain = max(-12.0, min(24.0, gain))
     filters = list(chain)
-    if measured:
-        filters.append(
-            f"loudnorm={target}"
-            f":measured_I={measured['input_i']}"
-            f":measured_TP={measured['input_tp']}"
-            f":measured_LRA={measured['input_lra']}"
-            f":measured_thresh={measured['input_thresh']}"
-            f":offset={measured['target_offset']}:linear=true")
-    elif not silent:
-        filters.append(f"loudnorm={target}")
-    filters.append("alimiter=limit=0.95")
+    if abs(gain) > 0.2:
+        filters.append(f"volume={gain:.2f}dB")
+    filters.append("alimiter=limit=0.95:level=disabled")
+    log.info("audio: %.1f LUFS (range %.1f LU) -> %+.1f dB -> target %.0f",
+             measured["I"], measured["LRA"], gain, TARGET_LUFS)
 
     out = video.with_name("clean.mp4")
     r = subprocess.run(
@@ -158,7 +166,7 @@ def clean_audio(video: Path, denoise: bool = True) -> bool:
         # same audio as mono reads ~3 LU quieter to EBU R128)
         [ff, "-hide_banner", "-y", "-i", str(video), "-c:v", "copy",
          "-af", ",".join(filters),
-         "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-ac", "2",
+         "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
          "-movflags", "+faststart", str(out)],
         capture_output=True, creationflags=CREATE_NO_WINDOW, timeout=900)
     if r.returncode != 0 or not out.exists() or out.stat().st_size == 0:
@@ -204,7 +212,11 @@ class Recorder:
             # remaining constant is compensated by itsoffset, leaving a
             # typical residual of about 20 ms.
             cmd += ["-f", "dshow", "-rtbufsize", "64M",
-                    "-audio_buffer_size", "50",
+                    # 50 ms starved the USB interface: a real take came back
+                    # with a 38 ms hole of digital silence in the middle.
+                    # 120 ms is still far under the 500 ms default that
+                    # caused the original sync problem.
+                    "-audio_buffer_size", "120",
                     "-itsoffset", f"-{self.av_offset_ms / 1000:.3f}",
                     "-i", f"audio={self.mic}"]
         if self.use_nvenc:
