@@ -3,3 +3,6 @@
 # PowerShell is happy with CRLF
 *.ps1 text eol=crlf
 *.bat text eol=crlf
+
+# RNNoise weights: never touch the line endings
+*.rnnn -text
