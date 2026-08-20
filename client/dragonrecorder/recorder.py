@@ -135,6 +135,7 @@ def _loudness(video: Path, chain: str) -> dict | None:
 
 TARGET_LUFS = -16.0       # what the web expects
 WIDE_LRA = 15.0           # above this, even out the range before lifting
+QUIET_TAKE_LUFS = -40.0   # below this it is room tone, not speech
 
 
 def clean_audio(video: Path, denoise: bool = False) -> bool:
@@ -188,13 +189,21 @@ def clean_audio(video: Path, denoise: bool = False) -> bool:
                  measured["LRA"])
 
     gain = TARGET_LUFS - measured["I"]
-    gain = max(-12.0, min(24.0, gain))
+    # A take that measures this quiet is room tone, not speech: lifting it
+    # all the way to target would just make the hiss loud (a silent test
+    # take asked for +24 dB). Give it enough to be audible and no more.
+    if measured["I"] < QUIET_TAKE_LUFS:
+        gain = min(gain, 8.0)
+        log.info("take is very quiet (%.1f LUFS) - limiting the lift",
+                 measured["I"])
+    gain = max(-12.0, min(18.0, gain))
     filters = list(chain)
     if abs(gain) > 0.2:
         filters.append(f"volume={gain:.2f}dB")
     filters.append("alimiter=limit=0.95:level=disabled")
-    log.info("audio: %.1f LUFS (range %.1f LU) -> %+.1f dB -> target %.0f",
-             measured["I"], measured["LRA"], gain, TARGET_LUFS)
+    log.info("audio: %.1f LUFS (range %.1f LU) -> %+.1f dB -> target %.0f "
+             "[%s]", measured["I"], measured["LRA"], gain, TARGET_LUFS,
+             ", ".join(f.split("=")[0] for f in filters))
 
     out = video.with_name("clean.mp4")
     r = subprocess.run(
