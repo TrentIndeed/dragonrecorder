@@ -148,7 +148,10 @@
 
     {% if r.transcript %}
     <section class="transcript" id="transcriptSection" aria-label="Transcript">
-      <h2>Transcript</h2>
+      <div class="thead">
+        <h2>Transcript</h2>
+        <button class="copytx" type="button">Copy</button>
+      </div>
       <div id="transcriptBody" data-has-words="{{ 1 if r.has_words else 0 }}">{{ r.transcript }}</div>
     </section>
     {% endif %}

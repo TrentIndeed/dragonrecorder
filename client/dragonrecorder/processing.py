@@ -399,6 +399,18 @@ def _find_claude() -> list[str] | None:
     return [found]
 
 
+TITLE_TAIL_JUNK = {"pitch", "proposal", "application", "video", "recording",
+                   "clip", "screencast", "intro", "demo", "overview"}
+
+
+def tidy_title(title: str) -> str:
+    """Drop a trailing format word the model tacked on regardless."""
+    words = (title or "").strip().rstrip(".").split()
+    while len(words) > 2 and words[-1].lower().strip(".,") in TITLE_TAIL_JUNK:
+        words.pop()
+    return " ".join(words)
+
+
 def ai_title(transcript: str) -> dict | None:
     """Claude Code CLI, same pattern as dragonEditor — uses the local
     subscription, no API key. Falls back to None (heuristic title)."""
@@ -408,18 +420,25 @@ def ai_title(transcript: str) -> dict | None:
     # instruction as a single-line arg (cmd.exe mangles newlines in args),
     # transcript on stdin
     # Loom-style naming: a short label a person would actually type, not a
-    # description of the video. Judging the content ("no substantive
-    # content") is explicitly out — the title is a name, not a review.
+    # description of the video, and not a category. Judging the content
+    # ("no substantive content") is out — the title is a name, not a review.
+    # The banned endings matter: left alone the model tacks the FORMAT onto
+    # every title ("GHL automation pitch", "GHL custom MCP server pitch"),
+    # which is noise when every recording in the library is a pitch.
     prompt = (
         "Stdin is the transcript of a screen recording. Reply with ONLY a "
         'JSON object {"title": ..., "description": ...}. '
-        "Title: 2 to 5 words, like a person naming their own video — "
-        "'Introduction', 'Quick intro', 'Checkout bug walkthrough', "
-        "'Pricing questions'. Sentence case, no quotes, no trailing period, "
-        "no filler like 'screen recording' or 'video'. Never judge or "
-        "editorialise the content (never say things like 'no substantive "
-        "content' or 'brief'); if the clip is only a greeting, name it for "
-        "the greeting. Description: 1-2 plain sentences on what it covers.")
+        "Title: 2 to 5 words naming the SUBJECT, the way a person names "
+        "their own video — 'GHL custom MCP server', 'Checkout bug "
+        "walkthrough', 'Pricing questions'. Sentence case, no quotes, no "
+        "trailing period. Name what it is ABOUT, never what kind of "
+        "recording it is: do not end the title with pitch, proposal, "
+        "application, video, recording, clip, screencast, intro or demo, "
+        "and do not start it with 'screen recording'. Never judge or "
+        "editorialise (no 'brief', no 'no substantive content'); if the "
+        "clip is only a greeting, name it for the greeting. "
+        "Description: 1-2 plain sentences on what it covers.")
+
     try:
         r = subprocess.run(
             [*claude, "-p", prompt, "--output-format", "json", "--max-turns", "1"],
@@ -453,6 +472,8 @@ def ai_title(transcript: str) -> dict | None:
                 continue
             try:
                 data = json.loads(m.group(0))
+                if isinstance(data, dict) and data.get("title"):
+                    data["title"] = tidy_title(str(data["title"]))
             except ValueError:
                 continue
             if data.get("title"):

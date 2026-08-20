@@ -475,6 +475,7 @@
       if (video.textTracks[0]) video.textTracks[0].mode = "showing";
     }
     renderChapters(s.chapters);
+    if (s.has_transcript) ensureTranscript(s.has_words);
     // an edit finished rendering (or was switched off): move to the file the
     // server says should be playing, keeping the viewer's place
     if (s.video_file && s.video_file !== currentFile) {
@@ -898,9 +899,14 @@
     }, 4000);
   }
 
-  // ---- transcript click-to-seek (word-level if words.json exists) ----
-  const tb = $("transcriptBody");
-  if (tb && window.DR.hasWords) {
+  // ---- transcript: build it whenever it lands, not only at page load ----
+  // The recorder opens this page the moment the take uploads, so the
+  // transcript usually does not exist yet when the HTML is rendered. It
+  // used to stay missing forever (and the owner rail said "No transcript
+  // for this recording" permanently); now the poll fills it in.
+  const wireWords = (tb) => {
+    if (!window.DR.hasWords || tb.dataset.wired) return;
+    tb.dataset.wired = "1";
     fetch(`/media/${slug}/words.json`).then((r) => r.json()).then((words) => {
       tb.textContent = "";
       const frag = document.createDocumentFragment();
@@ -919,13 +925,66 @@
       video.addEventListener("timeupdate", () => {
         const t = video.currentTime;
         let current = null;
-        for (const s of tb.children) {
-          const on = parseFloat(s.dataset.start) <= t;
-          if (on) current = s;
+        for (const el of tb.children) {
+          if (parseFloat(el.dataset.start) <= t) current = el;
         }
         tb.querySelector(".now")?.classList.remove("now");
         current?.classList.add("now");
       });
     }).catch(() => {});
+  };
+
+  const ensureTranscript = async (hasWords) => {
+    if (hasWords) window.DR.hasWords = true;
+    let section = document.getElementById("transcriptSection");
+    if (section && section.dataset.filled) return;
+    const res = await fetch(`/api/w/${slug}/transcript`).catch(() => null);
+    const text = res && res.ok ? (await res.json()).text : "";
+    if (!text) return;
+    window.DR.transcript = text;          // so "Copy transcript" is current
+    if (!section) {
+      section = document.createElement("section");
+      section.className = "transcript";
+      section.id = "transcriptSection";
+      section.setAttribute("aria-label", "Transcript");
+      section.innerHTML =
+        '<div class="thead"><h2>Transcript</h2>' +
+        '<button class="copytx" type="button">Copy</button></div>' +
+        '<div id="transcriptBody"></div>';
+      const pane = document.getElementById("pane-transcript");
+      if (document.body.classList.contains("owner") && pane) {
+        pane.textContent = "";            // drop the "No transcript" placeholder
+        pane.appendChild(section);
+        section.classList.add("in-rail");
+      } else {
+        document.querySelector(".cols")?.appendChild(section);
+      }
+    }
+    const tb = section.querySelector("#transcriptBody");
+    tb.textContent = text;
+    section.dataset.filled = "1";
+    wireWords(tb);
+  };
+
+  // delegated: the transcript section may be built later by the poll
+  document.addEventListener("click", async (e) => {
+    const btn = e.target.closest(".copytx");
+    if (!btn) return;
+    const text = window.DR.transcript
+      || document.getElementById("transcriptBody")?.innerText || "";
+    if (!text.trim()) return ptoast("No transcript yet");
+    try {
+      await navigator.clipboard.writeText(text.trim());
+      ptoast("Transcript copied");
+    } catch (err) {
+      ptoast("Couldn't copy — check clipboard permissions");
+    }
+  });
+
+  const tb0 = $("transcriptBody");
+  if (tb0) {
+    document.getElementById("transcriptSection").dataset.filled = "1";
+    wireWords(tb0);
   }
+
 })();

@@ -385,6 +385,15 @@ body.owner .layout {
 .crow { display: flex; gap: 10px; align-items: center; justify-content: space-between; }
 .pin { color: var(--muted); font-size: 13px; display: flex; gap: 6px; align-items: center; }
 
+.transcript .thead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.transcript .thead h2 { margin: 0; }
+.transcript .copytx { padding: 4px 12px; font-size: 12.5px; }
+
 .transcript #transcriptBody {
   max-height: 420px;
   overflow-y: auto;

@@ -341,7 +341,7 @@ def watch_state(slug: str):
     with db.connect() as dbc:
         row = dbc.execute(
             "SELECT status, title, title_is_ai, description, duration_s,"
-            " has_vtt, has_words, chapters, default_speed, wpm"
+            " has_vtt, has_words, chapters, default_speed, wpm, transcript"
             " FROM recordings WHERE slug=?", (slug,)).fetchone()
         if row is None:
             raise HTTPException(404)
@@ -373,6 +373,7 @@ def watch_state(slug: str):
         "default_speed": row["default_speed"],
         "wpm": row["wpm"],
         "analyzed": analyzed,
+        "has_transcript": bool(row["transcript"]),
         "views": views,
         "video_file": video_file,
         "cuts": sorted(cuts),
@@ -489,6 +490,21 @@ def _watch_alert(dbc, slug: str, vid: str, row, watched: float) -> str | None:
     title = (rec["title"] if rec else None) or slug
     return (f"👀 {who} is watching “{title}” ({int(watched)}s in)"
             f"\n{config.PUBLIC_URL}/w/{slug}")
+
+
+@app.get("/api/w/{slug}/transcript")
+def watch_transcript(slug: str):
+    """Fetched once, when a transcript turns up after the page was opened.
+
+    Kept out of the state payload on purpose: that is polled every few
+    seconds and a long recording's transcript is tens of kilobytes.
+    """
+    with db.connect() as dbc:
+        row = dbc.execute("SELECT transcript FROM recordings WHERE slug=?",
+                          (slug,)).fetchone()
+    if row is None:
+        raise HTTPException(404)
+    return {"text": row["transcript"] or ""}
 
 
 @app.get("/api/w/{slug}/heatmap")
