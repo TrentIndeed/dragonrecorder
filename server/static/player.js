@@ -475,6 +475,16 @@
       if (video.textTracks[0]) video.textTracks[0].mode = "showing";
     }
     renderChapters(s.chapters);
+    // an edit finished rendering (or was switched off): move to the file the
+    // server says should be playing, keeping the viewer's place
+    if (s.video_file && s.video_file !== currentFile) {
+      swapVideo(s.video_file, s.cuts || []);
+    } else if (Array.isArray(s.cuts) && s.cuts.length !== cutRegions.length) {
+      cutRegions = s.cuts;
+      currentCuts = s.cuts;
+      if (cutRegions.length) loadPeaks().then(drawWave);
+      else drawWave();
+    }
     const pill = $("viewPill");
     if (pill && typeof s.views === "number") {
       pill.textContent = `${s.views} view${s.views === 1 ? "" : "s"}`;
@@ -558,38 +568,72 @@
   };
   new ResizeObserver(drawWave).observe($("waveStrip"));
 
-  // The video playing is the EDITED render, so its clock skips the removed
-  // stretches. Walking the kept segments converts its time back onto the
-  // original timeline, which is what the strip draws.
-  const keptSegments = () => {
+  // The edited render's clock skips the removed stretches, so moving
+  // between the two timelines means walking the kept segments. Both
+  // directions take an explicit cut list: the page may be swapping from one
+  // edit to another, and each side needs its own.
+  const keptSegments = (cuts) => {
     const dur = peaksData?.duration || window.DR.duration || 0;
-    const sorted = [...cutRegions].sort((a, b) => a[0] - b[0]);
     const keeps = [];
     let pos = 0;
-    for (const [s, e] of sorted) {
+    for (const [s, e] of [...(cuts || [])].sort((a, b) => a[0] - b[0])) {
       if (s > pos) keeps.push([pos, s]);
       pos = Math.max(pos, e);
     }
     if (dur > pos) keeps.push([pos, dur]);
     return keeps;
   };
-  const editedToOriginal = (t) => {
+  const editedToOriginal = (t, cuts = cutRegions) => {
     let left = t;
-    for (const [s, e] of keptSegments()) {
+    for (const [s, e] of keptSegments(cuts)) {
       const span = e - s;
       if (left <= span) return s + left;
       left -= span;
     }
     return peaksData?.duration || t;
   };
-  const originalToEdited = (t) => {
+  const originalToEdited = (t, cuts = cutRegions) => {
     let acc = 0;
-    for (const [s, e] of keptSegments()) {
+    for (const [s, e] of keptSegments(cuts)) {
       if (t < s) return acc;
       if (t <= e) return acc + (t - s);
       acc += e - s;
     }
     return acc;
+  };
+
+  // ---- swap to a newly rendered edit without interrupting the viewer ----
+  // Reloading the page was jarring: it lost the play position, the volume
+  // handling and the scroll. This swaps the source in place and lands on
+  // the same moment of speech, because the position is mapped through the
+  // cut lists rather than kept as a raw number.
+  let currentFile = window.DR.videoFile || "video.mp4";
+  let currentCuts = [];
+  const swapVideo = (file, newCuts) => {
+    if (file === currentFile) { currentCuts = newCuts; return; }
+    const wasPlaying = !video.paused && !previewing;
+    const from = currentFile, fromCuts = currentCuts;
+    let target = video.currentTime;
+    if (from === "video.mp4" && file !== "video.mp4") {
+      target = originalToEdited(target, newCuts);
+    } else if (from !== "video.mp4" && file === "video.mp4") {
+      target = editedToOriginal(target, fromCuts);
+    } else {
+      target = originalToEdited(editedToOriginal(target, fromCuts), newCuts);
+    }
+    currentFile = file;
+    currentCuts = newCuts;
+    cutRegions = newCuts;
+    video.addEventListener("loadedmetadata", () => {
+      const dur = video.duration || 0;
+      video.currentTime = Math.max(0, Math.min(target, Math.max(0, dur - 0.05)));
+      if (wasPlaying) video.play().catch(() => {});
+      drawWave();
+    }, { once: true });
+    video.src = `/media/${slug}/${file}`;
+    video.load();
+    ptoast(file === "video.mp4" ? "Back to the original"
+                                : "Playing your edited version");
   };
 
   const movePlayhead = () => {
@@ -844,10 +888,12 @@
       const pendingCut = d.edits.some((e) =>
         ["fillers", "silences"].includes(e.kind) && e.enabled && !e.has_render);
       if (window.__railRefresh) window.__railRefresh();
-      if (!pendingCut || tries > 40) {
+      if (!pendingCut || tries > 60) {
         clearInterval(renderWatch);
         renderWatch = null;
-        if (!pendingCut) location.reload();   // play the edited render
+        // no reload: pollMeta sees the new file and swaps it in underneath
+        // the viewer, keeping their position and whether they were playing
+        if (!pendingCut) pollMeta();
       }
     }, 4000);
   }

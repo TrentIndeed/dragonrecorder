@@ -350,6 +350,17 @@ def watch_state(slug: str):
         views = dbc.execute(
             "SELECT COUNT(*) c FROM views WHERE slug=? AND is_owner=0",
             (slug,)).fetchone()["c"]
+        # which file should be playing right now, and the cuts that produced
+        # it — the page swaps to it in place when an edit finishes rendering
+        video_file = current_video_file(dbc, slug) if row["status"] == "ready"             else "video.mp4"
+        cuts = []
+        for e in dbc.execute(
+                "SELECT data FROM edits WHERE slug=? AND enabled=1"
+                " AND kind IN (?,?)", (slug, *CUT_KINDS)):
+            data = json.loads(e["data"]) if e["data"] else None
+            if isinstance(data, dict):
+                data = data.get("cuts")
+            cuts.extend(data or [])
     return {
         "status": row["status"],
         "title": row["title"],
@@ -363,6 +374,8 @@ def watch_state(slug: str):
         "wpm": row["wpm"],
         "analyzed": analyzed,
         "views": views,
+        "video_file": video_file,
+        "cuts": sorted(cuts),
     }
 
 

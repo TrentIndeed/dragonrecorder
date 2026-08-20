@@ -189,6 +189,7 @@
 <script>
 window.DR = {
   slug: {{ slug | tojson }},
+  videoFile: {{ video_file | tojson }},
   duration: {{ r.duration_s or 0 }},
   hasWords: {{ "true" if r.has_words else "false" }},
   isOwner: {{ "true" if is_owner else "false" }},
