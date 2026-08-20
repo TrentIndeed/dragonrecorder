@@ -43,9 +43,9 @@ DEFAULT_SETTINGS = {
     "camera": "",          # dshow device name, "" = none
     "mic": "",             # dshow device name, "" = none
     "mic_auto": True,      # True: follow the Windows default device
-    # FFT denoise, off by default: it costs more in artifacts than the
-    # quiet hiss it removes, and the SSL 2's noise floor is already low
-    "mic_denoise": False,
+    # RNNoise speech suppression, on by default: +11 dB SNR on a real take
+    # with the voice band untouched (the old FFT denoiser managed +0.6 dB)
+    "mic_denoise": True,
     "blur": False,
     "blur_strength": 3,    # background blur radius in px (1-10)
     "bubble_shape": "rect",   # "rect" (rounded rectangle) or "circle"

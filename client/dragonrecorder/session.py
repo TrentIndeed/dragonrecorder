@@ -71,6 +71,11 @@ class Session:
             settings.get("fps", 30),
             denoise=settings.get("mic_denoise", True),
             av_offset_ms=settings.get("av_offset_ms", 260))
+        # warm the capture path while the countdown runs, so the first take
+        # of a session starts as well-synced as the fifth
+        self._warm = threading.Thread(
+            target=recorder.warm_up, args=(settings["monitor"],), daemon=True)
+        self._warm.start()
         if countdown_s > 0:
             self.ui.show_countdown(settings["monitor"], countdown_s)
             threading.Thread(target=self._countdown_then_start,
@@ -108,6 +113,9 @@ class Session:
             if self._countdown_cancel.is_set():
                 return
             settings = config.load_settings()
+            warm = getattr(self, "_warm", None)
+            if warm:
+                warm.join(timeout=5)      # never start two grabbers at once
             # Ding BEFORE ffmpeg opens the mic, and let it finish: played
             # after capture starts, the speakers bleed into the recording
             # (and post-processing then normalises it up).

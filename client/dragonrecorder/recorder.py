@@ -73,6 +73,27 @@ def capture_audio_filter() -> str:
     return "pan=mono|c0=c0+c1"
 
 
+def warm_up(monitor: int) -> None:
+    """Grab a few throwaway frames so the real take starts warm.
+
+    Bringing up D3D11 and desktop duplication takes a few hundred ms the
+    first time, and the video clock only starts once it is ready — while
+    the mic has been running since the device opened. Measured across
+    batches of sync probes, a cold first run reads ~+227 ms against ~+30 ms
+    for every run after it. The countdown is dead time anyway, so this
+    absorbs the cost where nobody is watching.
+    """
+    try:
+        subprocess.run(
+            [config.find_ffmpeg(), "-hide_banner", "-loglevel", "error",
+             "-init_hw_device", "d3d11va", "-filter_complex",
+             f"ddagrab=output_idx={monitor - 1}:framerate=10",
+             "-frames:v", "8", "-f", "null", "-"],
+            capture_output=True, creationflags=CREATE_NO_WINDOW, timeout=20)
+    except Exception:
+        log.debug("capture warm-up failed", exc_info=True)
+
+
 def audio_channels(path: Path) -> int:
     try:
         out = subprocess.run(
@@ -83,6 +104,14 @@ def audio_channels(path: Path) -> int:
         return int(out.stdout.strip() or 0)
     except Exception:
         return 0
+
+
+def rnnoise_model() -> str | None:
+    """Path to the RNNoise weights, escaped for an ffmpeg filter argument."""
+    p = Path(__file__).resolve().parent / "assets" / "bd.rnnn"
+    if not p.exists():
+        return None
+    return p.as_posix().replace(":", r"\:")
 
 
 def _loudness(video: Path, chain: str) -> dict | None:
@@ -132,9 +161,17 @@ def clean_audio(video: Path, denoise: bool = False) -> bool:
         chain.append("pan=mono|c0=c0+c1")
     chain.append("highpass=f=80")          # mains hum, desk rumble, HVAC
     if denoise:
-        # off by default: the FFT denoiser leaves "musical noise" that is
-        # more objectionable than the quiet hiss it removes
-        chain.append("afftdn=nf=-20:tn=1")
+        model = rnnoise_model()
+        if model:
+            # RNNoise, the same class of speech denoiser a browser applies
+            # to getUserMedia — which is why Loom sounds cleaner off the
+            # same microphone. Measured on a real take: 43.1 -> 54.4 dB SNR,
+            # with the 300-3k voice band and the 6-10k air both unchanged.
+            # ffmpeg's afftdn managed +0.6 dB on the same file and left
+            # musical noise behind.
+            chain.append(f"arnndn=m='{model}'")
+        else:
+            log.warning("no RNNoise model - skipping noise suppression")
 
     measured = _loudness(video, ",".join(chain))
     if measured is None:
@@ -212,6 +249,10 @@ class Recorder:
             # remaining constant is compensated by itsoffset, leaving a
             # typical residual of about 20 ms.
             cmd += ["-f", "dshow", "-rtbufsize", "64M",
+                    # the device offers 48k; without this dshow picks 44.1k,
+                    # so Windows resamples down and clean_audio resamples
+                    # back up. RNNoise also wants 48k.
+                    "-sample_rate", "48000",
                     # 50 ms starved the USB interface: a real take came back
                     # with a 38 ms hole of digital silence in the middle.
                     # 120 ms is still far under the 500 ms default that
@@ -243,8 +284,12 @@ class Recorder:
                 "-pix_fmt", "yuv420p",
             ]
         if self.mic:
+            # 256k for the capture pass: this audio is encoded twice (here,
+            # then again after cleanup), and a null test put the second
+            # generation's artifacts 45 dB under the signal. Bitrate is free
+            # on a local file; generation loss is not.
             cmd += ["-af", capture_audio_filter(),
-                    "-c:a", "aac", "-b:a", "160k", "-ac", "1"]
+                    "-c:a", "aac", "-b:a", "256k", "-ac", "1"]
         cmd += ["-movflags", "+faststart", str(out)]
         return cmd
 
