@@ -191,12 +191,8 @@ class Session:
             self.ui.hide_panel()
             self.notify("Link copied", url)
             if config.load_settings().get("open_after_record", True):
-                # offer it to any DragonRecorder tab that is already open
-                # first; only spawn a new one if nothing takes it
-                from . import bridge
-                bridge.announce(slug, url)
-                threading.Thread(target=self._open_in_browser, args=(url,),
-                                 daemon=True).start()
+                threading.Thread(target=self._open_in_browser,
+                                 args=(url, slug), daemon=True).start()
         threading.Thread(target=self._finish_and_upload, args=(rec, slug),
                          daemon=True).start()
 
@@ -254,17 +250,28 @@ class Session:
     # milliseconds, so this only has to cover a page re-arming its poll.
     CLAIM_WAIT_S = 1.5
 
-    def _open_in_browser(self, url: str) -> None:
+    def _open_in_browser(self, url: str, slug: str = "") -> None:
+        """Show the finished take. A DragonRecorder page that is already open
+        gets first refusal — it navigates itself, so the library tab you were
+        looking at becomes the recording instead of a tab piling up beside
+        it. Only if nothing claims it do we open one.
+
+        A 'local-' slug is skipped: the server was down, so that link 404s
+        until a real slug is minted, and turning a good tab into a dead page
+        would be worse than the extra tab.
+        """
         import webbrowser
         from . import bridge
-        deadline = time.time() + self.CLAIM_WAIT_S
-        while time.time() < deadline:
-            if bridge.is_taken():
-                log.info("open tab claimed the recording; not opening one")
-                return
-            time.sleep(0.1)
-        if not bridge.mark_opened():
-            return          # a page claimed it on the last poll
+        if slug and not slug.startswith("local-"):
+            bridge.announce(slug, url)
+            deadline = time.time() + self.CLAIM_WAIT_S
+            while time.time() < deadline:
+                if bridge.is_taken():
+                    log.info("an open tab took the recording; not opening one")
+                    return
+                time.sleep(0.05)
+            if not bridge.mark_opened():
+                return      # a page claimed it as the window closed
         try:
             webbrowser.open(url)
         except Exception:
