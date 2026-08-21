@@ -191,6 +191,10 @@ class Session:
             self.ui.hide_panel()
             self.notify("Link copied", url)
             if config.load_settings().get("open_after_record", True):
+                # offer it to any DragonRecorder tab that is already open
+                # first; only spawn a new one if nothing takes it
+                from . import bridge
+                bridge.announce(slug, url)
                 threading.Thread(target=self._open_in_browser, args=(url,),
                                  daemon=True).start()
         threading.Thread(target=self._finish_and_upload, args=(rec, slug),
@@ -245,8 +249,22 @@ class Session:
             log.exception("processing pipeline failed")
             api.report_failure(f"processing pipeline failed for {slug}")
 
+    # how long an already-open tab gets to grab the new recording before we
+    # open one ourselves. Its request is parked on the bridge and wakes in
+    # milliseconds, so this only has to cover a page re-arming its poll.
+    CLAIM_WAIT_S = 1.5
+
     def _open_in_browser(self, url: str) -> None:
         import webbrowser
+        from . import bridge
+        deadline = time.time() + self.CLAIM_WAIT_S
+        while time.time() < deadline:
+            if bridge.is_taken():
+                log.info("open tab claimed the recording; not opening one")
+                return
+            time.sleep(0.1)
+        if not bridge.mark_opened():
+            return          # a page claimed it on the last poll
         try:
             webbrowser.open(url)
         except Exception:
