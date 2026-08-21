@@ -23,6 +23,9 @@
       0 1px 3px rgba(0, 0, 0, 0.35),
       inset 0 0 0 1px rgba(255, 255, 255, 0.06);
   }
+  /* nothing but the person: the window's transparent pixels are keyed out,
+     so the screen behind shows through and gets recorded as your background */
+  .wrap.cut { background: transparent; box-shadow: none; }
   canvas { display: block; width: 100%; height: 100%; }
   video { display: none; }
   .err {
@@ -35,6 +38,8 @@
 <body>
 <div class="wrap pywebview-drag-region">
   <video id="cam" autoplay muted playsinline></video>
+  <!-- what the segmenter is handed: see SEG_MAX below -->
+  <canvas id="seg" style="display:none"></canvas>
   <canvas id="out" class="pywebview-drag-region"></canvas>
   <div class="err" id="err">Camera unavailable</div>
 </div>
@@ -52,7 +57,11 @@
   let loadingSegmenter = null;
   let blurPx = 6;                  // background blur radius, set from settings
   let bgMode = "blur";             // "blur", "black" or "white" behind you
+  // "screen" is the odd one out: it paints nothing, so the window's
+  // transparent area is keyed out and the desktop behind it — the thing
+  // being recorded — is your background. No disc, no shadow, just you.
   const SOLID = { black: "#000", white: "#fff" };
+  const isCutout = () => bgMode === "screen";
 
   const blurCanvas = new OffscreenCanvas(CW, CH);
   const blurCtx = blurCanvas.getContext("2d");
@@ -64,18 +73,38 @@
   const smallCtx = smallCanvas.getContext("2d");
   const dilateCanvas = new OffscreenCanvas(64, 64);  // grown person mask
   const dilateCtx = dilateCanvas.getContext("2d");
+  // The segmenter's cost is set by the pixels it is handed, not by the size
+  // of the mask it returns. Handing it the raw camera frame meant the GPU
+  // chewed 3.8 megapixels per frame for a 256x256 mask: 61 ms of blocking
+  // readback at this webcam's native size, which is most of why the outline
+  // trailed the person. It only ever sees the part of the frame that is on
+  // screen, scaled to fit SEG_MAX, so the mask lines up with the canvas
+  // 1:1 and the model spends its resolution on what is actually shown.
+  const SEG_MAX = 256;
+  const segCanvas = document.getElementById("seg");
+  const segCtx = segCanvas.getContext("2d", { alpha: false });
   let maskImageData = null;
 
   const SHADOW = 10;               // gap around the shape, for the shadow
+  let shapeW = 488, shapeH = 274;
+  function applyChrome() {
+    const wrap = document.querySelector(".wrap");
+    wrap.classList.toggle("cut", isCutout());
+    wrap.style.borderRadius =
+      isCutout() ? "0" : (shapeW === shapeH ? "50%" : "16px");
+  }
   window.setShape = (w, h) => {
+    shapeW = w; shapeH = h;
     // the window is (shape + SHADOW on every side); the canvas is the shape
     CW = w - SHADOW * 2; CH = h - SHADOW * 2;
     out.width = CW; out.height = CH;
     blurCanvas.width = personCanvas.width = CW;
     blurCanvas.height = personCanvas.height = CH;
-    const wrap = document.querySelector(".wrap");
+    const k = SEG_MAX / Math.max(CW, CH);
+    segCanvas.width = Math.max(64, Math.round(CW * k));
+    segCanvas.height = Math.max(64, Math.round(CH * k));
     // circle when square, otherwise Loom's softly rounded rectangle
-    wrap.style.borderRadius = (w === h) ? "50%" : "16px";
+    applyChrome();
   };
   setShape(488, 274);
 
@@ -119,21 +148,13 @@
     drawFrameTo(c, CW, CH);
   }
 
-  // The segmenter runs on the WHOLE camera frame, but the canvas shows a
-  // cover-crop of it. Drawing the mask stretched to the canvas therefore
-  // squashed it against the image — for a 16:9 camera in a square bubble by
-  // 1.78x horizontally — so the mask edge sat inside the face and the sides
-  // of the head were blurred. The mask has to be cropped exactly like the
-  // frame it belongs to.
-  function drawMaskTo(c, src, mw, mh) {
-    const vw = video.videoWidth, vh = video.videoHeight;
-    if (!vw) return;
-    const scale = Math.max(CW / vw, CH / vh);
-    const sw = CW / scale, sh = CH / scale;      // crop rect, in video pixels
-    const kx = mw / vw, ky = mh / vh;            // video pixels -> mask pixels
-    c.drawImage(src,
-                ((vw - sw) / 2) * kx, ((vh - sh) / 2) * ky, sw * kx, sh * ky,
-                0, 0, CW, CH);
+  // The segmenter is fed the same cover-crop the canvas shows, so its mask
+  // maps straight onto the canvas. (It used to run on the whole camera
+  // frame while the canvas showed a crop of it, which squashed the mask
+  // against the image — a 16:9 camera in a square bubble by 1.78x — and put
+  // the mask edge inside the face.)
+  function drawMaskTo(c, src) {
+    c.drawImage(src, 0, 0, CW, CH);
   }
 
   // Mask post-processing. The raw mask flickers frame to frame, which reads
@@ -141,19 +162,50 @@
   // kept narrow so the person's edge stays crisp instead of dissolving.
   let prevMask = null;
   // Asymmetric smoothing: claim a pixel as "person" almost immediately, let
-  // go of it slowly. Symmetric smoothing made the mask trail behind a moving
-  // head, so the leading edge — the side of the face and the ears — dropped
-  // out of the mask and got blurred.
-  const RISE = 0.25;         // weight kept from the previous frame when
-  const FALL = 0.85;         // ...gaining vs losing coverage
+  // go of it a little more slowly. Symmetric smoothing made the mask trail
+  // behind a moving head, so the leading edge — the side of the face and
+  // the ears — dropped out of the mask and got blurred.
+  //
+  // These are time constants in MILLISECONDS, not per-frame weights. As
+  // per-frame weights, letting go took ~4 frames however long a frame
+  // happened to be, so when the pipeline was running at 12 fps the outline
+  // dragged a third of a second behind the person. In ms the release is the
+  // same short moment whatever the frame rate.
+  const RISE_MS = 12;        // how fast a pixel is claimed as person
+  const FALL_MS = 45;        // ...and released again
   const EDGE = 0.5;          // alpha midpoint
   const DILATE = 3;          // mask pixels to grow the person by
+  // Against a flat colour every mask pixel that is not really you is a
+  // lit-room rim around your head, so the bias goes the other way there:
+  // demand more confidence at the edge and shave the silhouette instead of
+  // growing it. Under blur, none of that is visible and the old bias (keep
+  // a sliver of background rather than blur an ear) is still the right one.
+  // Two edge profiles, because the two backgrounds fail differently.
+  //
+  // Under blur, a mask that is slightly too big costs nothing (the sliver
+  // of room it keeps is blurred anyway) and a mask that is slightly too
+  // small blurs an ear, so it is grown and the edge is allowed to be soft.
+  //
+  // On a flat colour or a cutout, the soft edge IS the problem: a wide
+  // alpha ramp draws a grey gradient ring around your head that reads as an
+  // outline. Shrinking the mask fixes the ring by eating into your face -
+  // measured at -3.4 points of person area, which is exactly what it looked
+  // like - so the mask is left where it is and the ramp is narrowed
+  // instead. Measured on a real take: ring area 3.18% of the bubble at the
+  // soft settings, 1.40% here, with person area unchanged.
+  const SOLID_EDGE = 0.56;   // confidence needed at the edge, on a colour
+  const RAMP = 6, SOLID_RAMP = 14;      // how hard the alpha ramp is
+  const FEATHER = 260, SOLID_FEATHER = 700;   // CW / this = blur px
 
   // The background the person is composited onto: the blurred room, or a
   // flat colour. Colour is the cheap path — no downscale, no filter, just
   // a fill.
   function paintBackground() {
     blurCtx.filter = "none";
+    if (isCutout()) {
+      blurCtx.clearRect(0, 0, CW, CH);
+      return;
+    }
     if (SOLID[bgMode]) {
       blurCtx.fillStyle = SOLID[bgMode];
       blurCtx.fillRect(0, 0, CW, CH);
@@ -175,11 +227,15 @@
     blurCtx.filter = "none";
   }
 
+  let lastFrameAt = 0;
   function drawEffect(result) {
     paintBackground();
     drawFrame(personCtx);
     const mask = result.categoryMask;
-    if (!mask) { drawFrame(ctx); return; }
+    if (!mask) {
+      if (isCutout()) ctx.clearRect(0, 0, CW, CH); else drawFrame(ctx);
+      return;
+    }
     const cats = mask.getAsUint8Array();
     const mw = mask.width, mh = mask.height;
     if (!maskImageData || maskImageData.width !== mw) {
@@ -191,15 +247,23 @@
       prevMask = new Float32Array(cats.length);
     }
     const px = maskImageData.data;
+    const solid = !!SOLID[bgMode] || isCutout();
+    const edge = solid ? SOLID_EDGE : EDGE;
+    const ramp = solid ? SOLID_RAMP : RAMP;
+    const now = performance.now();
+    // clamped: a hidden window or a stall must not blow the mask away
+    const dt = lastFrameAt ? Math.min(120, now - lastFrameAt) : 16;
+    lastFrameAt = now;
+    const kRise = Math.exp(-dt / RISE_MS), kFall = Math.exp(-dt / FALL_MS);
     for (let i = 0; i < cats.length; i++) {
       // category 0 is background; hair, skin, clothes and accessories are
       // all "person", which is why this follows a hairline properly
       const target = cats[i] === 0 ? 0 : 1;
-      const keep = target > prevMask[i] ? RISE : FALL;
+      const keep = target > prevMask[i] ? kRise : kFall;
       const v = prevMask[i] * keep + target * (1 - keep);
       prevMask[i] = v;
       // narrow ramp around the midpoint: a definite edge, not a fade
-      let a = (v - EDGE) * 6 + 0.5;
+      let a = (v - edge) * ramp + 0.5;
       px[i * 4 + 3] = (a < 0 ? 0 : a > 1 ? 1 : a) * 255;
     }
     maskCtx.putImageData(maskImageData, 0, 0);
@@ -208,52 +272,65 @@
     // just inside the person, so an exact mask shaves the rim of an ear or
     // a cheek into the blurred background; better to keep a sliver of
     // background sharp than to blur part of a face.
-    // On blur, growing the mask is free: the sliver of background kept
-    // around a face is itself blurred, so nobody sees it. On a flat colour
-    // that sliver is a visible halo of the real room, so the mask grows by
-    // a single pixel and the edge is feathered a little harder instead.
-    const grow = SOLID[bgMode] ? 1 : DILATE;
     if (dilateCanvas.width !== mw) {
       dilateCanvas.width = mw; dilateCanvas.height = mh;
     }
     dilateCtx.clearRect(0, 0, mw, mh);
-    dilateCtx.globalCompositeOperation = "lighter";
-    for (let dx = -grow; dx <= grow; dx += grow) {
-      for (let dy = -grow; dy <= grow; dy += grow) {
-        dilateCtx.drawImage(maskCanvas, dx, dy);
+    if (solid) {
+      dilateCtx.drawImage(maskCanvas, 0, 0);      // as the model drew it
+    } else {
+      dilateCtx.globalCompositeOperation = "lighter";
+      for (let dx = -DILATE; dx <= DILATE; dx += DILATE) {
+        for (let dy = -DILATE; dy <= DILATE; dy += DILATE) {
+          dilateCtx.drawImage(maskCanvas, dx, dy);
+        }
       }
+      dilateCtx.globalCompositeOperation = "source-over";
     }
-    dilateCtx.globalCompositeOperation = "source-over";
 
     personCtx.globalCompositeOperation = "destination-in";
     // just enough feather to hide mask pixelation at this scale
-    personCtx.filter = `blur(${Math.max(1, CW / (SOLID[bgMode] ? 190 : 260))}px)`;
-    drawMaskTo(personCtx, dilateCanvas, mw, mh);
+    personCtx.filter = `blur(${Math.max(0.6, CW / (solid ? SOLID_FEATHER : FEATHER))}px)`;
+    drawMaskTo(personCtx, dilateCanvas);
     personCtx.filter = "none";
     personCtx.globalCompositeOperation = "source-over";
 
+    ctx.clearRect(0, 0, CW, CH);
     ctx.drawImage(blurCanvas, 0, 0);
     ctx.drawImage(personCanvas, 0, 0);
   }
+
+  // Driven by the camera, not by the screen: requestVideoFrameCallback
+  // fires once per decoded frame, so a 30 fps camera on a 60 Hz screen is
+  // segmented 30 times a second instead of 60, half of them on a frame that
+  // had not changed.
+  const nextFrame = (fn) => {
+    if (video.requestVideoFrameCallback) video.requestVideoFrameCallback(fn);
+    else requestAnimationFrame(fn);
+  };
 
   async function loop() {
     if (!running) return;
     if (video.readyState >= 2) {
       if (blurOn && segmenter) {
-        const result = segmenter.segmentForVideo(video, performance.now());
+        drawFrameTo(segCtx, segCanvas.width, segCanvas.height);
+        const result = segmenter.segmentForVideo(segCanvas, performance.now());
         drawEffect(result);
         result.close();
+      } else if (blurOn && isCutout()) {
+        ctx.clearRect(0, 0, CW, CH);      // segmenter still loading
       } else {
         drawFrame(ctx);
       }
     }
-    requestAnimationFrame(loop);
+    nextFrame(loop);
   }
 
   let camGen = 0, starting = false;
   window.startCamera = async (dshowName, blur, strength, mode) => {
     if (strength) blurPx = strength;
     if (mode) bgMode = mode;
+    applyChrome();
     // single-flight: panel-show + record-start can call within ms of each
     // other — a second concurrent getUserMedia would orphan the first
     // stream and pin the camera LED on forever
@@ -265,8 +342,10 @@
       const devices = await navigator.mediaDevices.enumerateDevices();
       const match = devices.find(
         (d) => d.kind === "videoinput" && d.label === dshowName);
-      // max the camera can do, at ITS native aspect (no forcing)
-      const vc = { width: { ideal: 3840 }, height: { ideal: 2160 } };
+      // The bubble is at most ~780 CSS px wide, so a 4K stream was decoded
+      // and thrown away every frame. 1080p is still more than the bubble
+      // can show, at its native aspect (no forcing).
+      const vc = { width: { ideal: 1920 }, height: { ideal: 1080 } };
       if (match) vc.deviceId = { exact: match.deviceId };
       const s = await navigator.mediaDevices.getUserMedia({
         video: vc, audio: false,
@@ -296,10 +375,11 @@
     blurOn = on;
     if (strength) blurPx = strength;
     if (mode) bgMode = mode;
+    applyChrome();
     if (on) await loadSegmenter();
   };
   window.setBlurStrength = (px) => { blurPx = px; };
-  window.setBgMode = (mode) => { bgMode = mode; };
+  window.setBgMode = (mode) => { bgMode = mode; applyChrome(); };
 
   window.stopCamera = () => {
     camGen++;   // invalidates any startCamera still awaiting getUserMedia

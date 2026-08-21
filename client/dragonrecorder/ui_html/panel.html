@@ -230,11 +230,13 @@
       <svg id="shapeCircle" viewBox="0 0 24 24" style="display:none"><circle cx="12" cy="12" r="8"/></svg>
       <span id="shapeLabel">Shape</span>
     </button>
-    <!-- cycles off -> blur -> black -> white, like the shape button cycles -->
-    <button id="blur" title="Background: off / blur / black / white"><span class="dot"></span>
+    <!-- cycles off -> blur -> black -> white -> screen -->
+    <button id="blur" title="Background: off / blur / black / white / screen"><span class="dot"></span>
       <svg id="blurIcon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-dasharray="3 3"/></svg>
       <!-- filled disc = black, hollow disc = white -->
       <svg id="solidIcon" viewBox="0 0 24 24" style="display:none"><circle id="solidFill" cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
+      <!-- screen: you cut out over the recording, no bubble at all -->
+      <svg id="screenIcon" viewBox="0 0 24 24" style="display:none"><path d="M3 5h18a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1h-6v2h2v2H7v-2h2v-2H3a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="9" r="2"/><path d="M8.5 14a3.5 3.5 0 0 1 7 0z"/></svg>
       <span id="blurLabel">Blur</span>
     </button>
     <button id="more" title="Open your library">
@@ -331,7 +333,7 @@
       }
     } catch (e) {}
     bgOn = !!info.settings.blur;
-    bgMode = ["black", "white"].includes(info.settings.bg_mode)
+    bgMode = ["black", "white", "screen"].includes(info.settings.bg_mode)
       ? info.settings.bg_mode : "blur";
     renderBg();
     shape = info.settings.bubble_shape || "rect";
@@ -365,13 +367,15 @@
     }), 150);
   }
 
-  const BG_LABEL = { blur: "Blur", black: "Black", white: "White" };
+  const BG_LABEL = { blur: "Blur", black: "Black", white: "White",
+                     screen: "Screen" };
   function renderBg() {
-    const solid = bgMode !== "blur";
+    const solid = bgMode === "black" || bgMode === "white";
     $("blur").classList.toggle("on", bgOn);
     $("blurLabel").textContent = BG_LABEL[bgMode];
-    $("blurIcon").style.display = solid ? "none" : "";
+    $("blurIcon").style.display = bgMode === "blur" ? "" : "none";
     $("solidIcon").style.display = solid ? "" : "none";
+    $("screenIcon").style.display = bgMode === "screen" ? "" : "none";
     // filled for black, hollow for white
     $("solidFill").style.display = bgMode === "black" ? "" : "none";
     // strength only means anything for blur
@@ -391,10 +395,11 @@
     $(id).addEventListener("change", () => { updateBadges(); save(); });
 
   $("blur").addEventListener("click", () => {
-    // off -> blur -> black -> white -> off
+    // off -> blur -> black -> white -> screen -> off
     if (!bgOn) { bgOn = true; bgMode = "blur"; }
     else if (bgMode === "blur") { bgMode = "black"; }
     else if (bgMode === "black") { bgMode = "white"; }
+    else if (bgMode === "white") { bgMode = "screen"; }
     else { bgOn = false; bgMode = "blur"; }
     renderBg();
     save();

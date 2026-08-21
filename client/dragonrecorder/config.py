@@ -47,7 +47,9 @@ DEFAULT_SETTINGS = {
     # with the voice band untouched (the old FFT denoiser managed +0.6 dB)
     "mic_denoise": True,
     "blur": False,         # background effect on/off (which one: bg_mode)
-    "bg_mode": "blur",     # "blur", "black" or "white" behind you
+    # "blur" / "black" / "white" / "screen" (no bubble - just you, cut out
+    # over whatever is on screen)
+    "bg_mode": "blur",
     "blur_strength": 3,    # background blur radius in px (1-10)
     "bubble_shape": "rect",   # "rect" (rounded rectangle) or "circle"
     "bubble_scale": 80,    # camera bubble size, percent (50-160)
@@ -74,7 +76,7 @@ PANEL_KEYS = ("monitor", "camera", "mic", "blur", "bg_mode", "bubble_shape",
               "fps")
 
 
-BG_MODES = ("blur", "black", "white")
+BG_MODES = ("blur", "black", "white", "screen")
 
 
 def bg_mode(s: dict) -> str:
