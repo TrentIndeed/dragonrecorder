@@ -2,6 +2,18 @@
 .shell { display: flex; min-height: 100vh; }
 
 .side {
+  /* the brand's own ground colour. Tokens are rebound rather than each rule
+     overridden, so everything in here (nav hovers, rules, labels) follows
+     without knowing it is on a dark surface. */
+  background: var(--brand-ink);
+  color: var(--brand-text);
+  --text: var(--brand-text);
+  --muted: var(--brand-muted);
+  --faint: #6b7a8d;
+  --line: var(--brand-line);
+  --bg: #0c1119;
+  --surface: #151d29;
+  --surface-2: #1b2534;
   width: 232px;
   flex: none;
   border-right: 1px solid var(--line);
@@ -16,11 +28,16 @@
 .brand {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 9px;
   font-weight: 700;
   font-size: 15px;
+  letter-spacing: -0.02em;
   padding: 2px 6px;
 }
+/* on ink the tile would disappear, so the mark inverts: mint lock, dark
+   glyph, no tile */
+.side .uelock { background: var(--brand); color: var(--brand-ink); }
+.brand .thin { font-weight: 500; color: var(--brand-muted); }
 .navitem {
   display: flex;
   align-items: center;
@@ -66,13 +83,14 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
-  background: var(--accent);
+  /* mint on ink is the brand's own call-to-action pairing */
+  background: var(--brand);
   border: none;
-  color: #fff;
+  color: var(--brand-ink);
   font-weight: 600;
   padding: 10px;
 }
-.recordbtn:hover { background: var(--accent); filter: brightness(1.08); }
+.recordbtn:hover { background: var(--brand); filter: brightness(1.08); }
 
 .main { flex: 1; padding: 24px 32px 80px; min-width: 0; }
 .mhead {

@@ -592,9 +592,10 @@ body.owner #transcriptSection.in-rail { display: block; }
 .topbar {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 10px;
+  gap: 12px;
+  margin-bottom: 12px;
 }
+.topbar .uebrand { margin-right: auto; }
 .topbar a.back {
   display: inline-flex;
   align-items: center;

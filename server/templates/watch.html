@@ -3,10 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{{ r.title or "Recording" }} — DragonRecorder</title>
+<title>{{ r.title or "Recording" }} — Unlocked Efficiency</title>
 <meta property="og:title" content="{{ r.title or 'Screen recording' }}">
 <meta property="og:description" content="{{ r.description or 'Watch this recording' }}">
 <meta property="og:type" content="video.other">
+<meta property="og:site_name" content="Unlocked Efficiency">
 {% if r.has_thumb %}<meta property="og:image" content="/media/{{ slug }}/thumb.jpg">{% endif %}
 <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
 <link rel="stylesheet" href="/static/shared.css?v={{ v }}">
@@ -14,11 +15,13 @@
 </head>
 <body>
 <main class="watch">
-  {% if is_owner %}
   <div class="topbar">
-    <a class="back" href="/dash">&#8592; Library</a>
+    <a class="uebrand" href="https://unlockedefficiency.com" target="_blank"
+       rel="noopener"><span class="uelock"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M7 11V7.5a4.5 4.5 0 0 1 8.6-1.9"/><rect x="4" y="11" width="15" height="9.5" rx="2.6" fill="currentColor" stroke="none"/></svg></span>
+      <span>Unlocked <span class="thin">Efficiency</span></span>
+    </a>
+    {% if is_owner %}<a class="back" href="/dash">&#8592; Library</a>{% endif %}
   </div>
-  {% endif %}
   <header class="head">
     <div>
       <h1 id="title">{{ r.title or "Untitled recording" }}
@@ -187,6 +190,13 @@
     <div class="tabpane" id="pane-transcript" hidden></div>
   </aside>
   </div><!-- /layout -->
+  {% if not is_owner %}
+  <footer class="uefoot">
+    <a href="https://unlockedefficiency.com" target="_blank" rel="noopener">Unlocked Efficiency</a>
+    <span class="dot">&bull;</span>
+    <span>AI automation for machine shops &amp; HVAC</span>
+  </footer>
+  {% endif %}
 </main>
 <div class="ptoast" id="ptoast" role="status"></div>
 <script>

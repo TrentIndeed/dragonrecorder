@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sign in — DragonRecorder</title>
+<title>Sign in — Unlocked Efficiency</title>
 <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
 <link rel="stylesheet" href="/static/shared.css?v={{ v }}">
 <style>
@@ -29,13 +29,18 @@
     border-color: var(--accent); color: #fff; padding: 10px;
   }
   .card button:hover { filter: brightness(1.06); }
+  .loginbrand { justify-content: center; font-size: 19px; margin-bottom: 6px; }
+  .loginbrand .uelock { width: 30px; height: 30px; border-radius: 9px; }
+  .loginbrand .uelock svg { width: 17px; height: 17px; }
   #err { color: var(--live); font-size: 13px; min-height: 18px; margin-top: 10px; }
 </style>
 </head>
 <body>
 <section class="login">
   <form class="card" id="form" autocomplete="on">
-    <h1>DragonRecorder</h1>
+    <div class="uebrand loginbrand"><span class="uelock"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M7 11V7.5a4.5 4.5 0 0 1 8.6-1.9"/><rect x="4" y="11" width="15" height="9.5" rx="2.6" fill="currentColor" stroke="none"/></svg></span>
+      <span>Unlocked <span class="thin">Efficiency</span></span>
+    </div>
     <p>Sign in to see your recordings and viewers.</p>
     <label for="u">Username</label>
     <input id="u" name="username" autocomplete="username" autocapitalize="off" spellcheck="false">
