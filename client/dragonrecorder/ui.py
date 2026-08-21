@@ -333,7 +333,7 @@ class Overlays:
         cam_js = camera.replace("\\", "\\\\").replace("'", "\\'")
         self.bubble.evaluate_js(
             f"startCamera('{cam_js}', {str(blur).lower()}, "
-            f"{int(s.get('blur_strength', 3))})")
+            f"{int(s.get('blur_strength', 3))}, '{config.bg_mode(s)}')")
 
     def resize_bubble(self, scale_pct: int) -> None:
         """Resize the live bubble in place, for slider drags.
@@ -357,12 +357,15 @@ class Overlays:
         self.bubble.evaluate_js(f"setShape({css_w}, {css_h})")
         winapi.force_rect_topmost(hwnd, x, y, w, h)
 
-    def set_bubble_blur(self, blur: bool, strength: int | None = None):
+    def set_bubble_blur(self, blur: bool, strength: int | None = None,
+                        mode: str | None = None):
         if self.bubble:
+            s = config.load_settings()
             if strength is None:
-                strength = int(config.load_settings().get("blur_strength", 3))
+                strength = int(s.get("blur_strength", 3))
+            mode = config.bg_mode(s if mode is None else {"bg_mode": mode})
             self.bubble.evaluate_js(
-                f"setBlur({str(blur).lower()}, {int(strength)})")
+                f"setBlur({str(blur).lower()}, {int(strength)}, '{mode}')")
 
     def toggle_bubble_visible(self) -> bool:
         """Camera on/off mid-recording. Returns new visibility."""

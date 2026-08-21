@@ -46,7 +46,8 @@ DEFAULT_SETTINGS = {
     # RNNoise speech suppression, on by default: +11 dB SNR on a real take
     # with the voice band untouched (the old FFT denoiser managed +0.6 dB)
     "mic_denoise": True,
-    "blur": False,
+    "blur": False,         # background effect on/off (which one: bg_mode)
+    "bg_mode": "blur",     # "blur", "black" or "white" behind you
     "blur_strength": 3,    # background blur radius in px (1-10)
     "bubble_shape": "rect",   # "rect" (rounded rectangle) or "circle"
     "bubble_scale": 80,    # camera bubble size, percent (50-160)
@@ -68,9 +69,20 @@ DEFAULT_SETTINGS = {
 }
 # every settings key the panel is allowed to write (keeps a malformed or
 # stale payload from clobbering unrelated state like bubble_x)
-PANEL_KEYS = ("monitor", "camera", "mic", "blur", "bubble_shape",
+PANEL_KEYS = ("monitor", "camera", "mic", "blur", "bg_mode", "bubble_shape",
               "blur_strength", "bubble_scale", "mic_denoise", "start_sound",
               "fps")
+
+
+BG_MODES = ("blur", "black", "white")
+
+
+def bg_mode(s: dict) -> str:
+    """Which background effect the webcam bubble should run. Anything
+    unexpected in settings.json falls back to blur - the value is
+    interpolated straight into the bubble's JS."""
+    m = s.get("bg_mode")
+    return m if m in BG_MODES else "blur"
 
 
 def load_settings() -> dict:

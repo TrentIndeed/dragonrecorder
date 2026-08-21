@@ -57,7 +57,8 @@ log = logging.getLogger("dr.main")
 
 HOTKEY_RECORD = config.HOTKEY_RECORD
 HOTKEY_DRAW = config.HOTKEY_DRAW
-LOCAL_KEEP_DAYS = 14
+LOCAL_KEEP_DAYS = 14        # keep a take's metadata this long
+LOCAL_KEEP_VIDEO_DAYS = 2   # but drop its video once safely uploaded
 
 
 class PanelApi:
@@ -117,6 +118,7 @@ class PanelApi:
         old_shape = cur.get("bubble_shape", "rect")
         old_mic = cur["mic"]
         old_strength = cur.get("blur_strength", 3)
+        old_bg = cur.get("bg_mode", "blur")
         old_scale = cur.get("bubble_scale", 100)
         cur.update({k: s[k] for k in config.PANEL_KEYS if k in s})
         if "mic" in s and s["mic"] != old_mic:
@@ -141,7 +143,8 @@ class PanelApi:
                 if cur["camera"]:
                     ov.show_bubble(cur["monitor"], cur["camera"], cur["blur"])
             elif cur["camera"] and (cur["blur"] != old_blur
-                                    or cur.get("blur_strength") != old_strength):
+                                    or cur.get("blur_strength") != old_strength
+                                    or cur.get("bg_mode", "blur") != old_bg):
                 ov.set_bubble_blur(cur["blur"], cur.get("blur_strength", 3))
 
     def start_recording(self):
@@ -347,11 +350,41 @@ class App:
                 log.exception("watch event poll failed")
 
     def cleanup_old_takes(self):
-        cutoff = time.time() - LOCAL_KEEP_DAYS * 86400
+        """Two-stage prune.
+
+        The video is ~99% of a take's size and the server already has it once the
+        take is uploaded, so it goes first. The metadata left behind (slug,
+        words.json, captions, peaks) is a few dozen KB and is what keeps an old
+        take searchable, so it survives until the full cutoff.
+
+        A take with no slug never uploaded, which makes its local video the only
+        copy. Those are left alone entirely.
+        """
+        now = time.time()
+        dir_cutoff = now - LOCAL_KEEP_DAYS * 86400
+        vid_cutoff = now - LOCAL_KEEP_VIDEO_DAYS * 86400
+
         for d in config.RECORDINGS_DIR.iterdir():
             try:
-                if d.is_dir() and d.stat().st_mtime < cutoff:
+                if not d.is_dir():
+                    continue
+                mtime = d.stat().st_mtime
+                if mtime < dir_cutoff:
                     shutil.rmtree(d, ignore_errors=True)
+                    continue
+                if mtime >= vid_cutoff:
+                    continue
+
+                slug_file = d / "slug.txt"
+                slug = slug_file.read_text("utf-8").strip() if slug_file.exists() else ""
+                if not slug or slug.startswith("local-"):
+                    continue  # never uploaded; this video is the only copy
+
+                for f in d.glob("*.mp4"):
+                    try:
+                        f.unlink()
+                    except OSError:
+                        pass
             except OSError:
                 pass
 

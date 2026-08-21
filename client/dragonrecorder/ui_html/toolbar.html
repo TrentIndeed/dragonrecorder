@@ -91,7 +91,7 @@
     <button id="cam"><span class="tip">Camera on/off</span>
       <svg viewBox="0 0 24 24"><path d="M17 10.5V7a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-3.5l4 4v-11l-4 4z"/></svg>
     </button>
-    <button id="blur"><span class="tip">Background blur</span>
+    <button id="blur"><span class="tip" id="blurTip">Background blur</span>
       <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-dasharray="3 3"/></svg>
     </button>
   </div>
@@ -117,6 +117,10 @@
       document.body.classList.toggle("paused", st.state === "PAUSED");
       $("icoPause").style.display = st.state === "PAUSED" ? "none" : "";
       $("icoResume").style.display = st.state === "PAUSED" ? "" : "none";
+      // the button toggles whichever background effect the card picked
+      const tip = "Background " + (st.bg_mode || "blur");
+      if ($("blurTip").textContent !== tip) $("blurTip").textContent = tip;
+      $("blur").classList.toggle("active", !!st.bg_on);
     } catch (e) {}
   }
   window.addEventListener("pywebviewready", () => setInterval(poll, 250));

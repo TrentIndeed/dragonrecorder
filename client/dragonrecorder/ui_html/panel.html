@@ -230,9 +230,12 @@
       <svg id="shapeCircle" viewBox="0 0 24 24" style="display:none"><circle cx="12" cy="12" r="8"/></svg>
       <span id="shapeLabel">Shape</span>
     </button>
-    <button id="blur"><span class="dot"></span>
-      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-dasharray="3 3"/></svg>
-      Blur
+    <!-- cycles off -> blur -> black -> white, like the shape button cycles -->
+    <button id="blur" title="Background: off / blur / black / white"><span class="dot"></span>
+      <svg id="blurIcon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-dasharray="3 3"/></svg>
+      <!-- filled disc = black, hollow disc = white -->
+      <svg id="solidIcon" viewBox="0 0 24 24" style="display:none"><circle id="solidFill" cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
+      <span id="blurLabel">Blur</span>
     </button>
     <button id="more" title="Open your library">
       <svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>
@@ -246,6 +249,7 @@
   let saveTimer;
   let loaded = false;      // guards save() until settings are on screen
   let shape = "rect";
+  let bgOn = false, bgMode = "blur";     // background effect: off/blur/black
   function renderShape() {
     $("shapeRect").style.display = shape === "rect" ? "" : "none";
     $("shapeCircle").style.display = shape === "circle" ? "" : "none";
@@ -326,14 +330,16 @@
         startMicMeter();
       }
     } catch (e) {}
-    $("blur").classList.toggle("on", info.settings.blur);
+    bgOn = !!info.settings.blur;
+    bgMode = ["black", "white"].includes(info.settings.bg_mode)
+      ? info.settings.bg_mode : "blur";
+    renderBg();
     shape = info.settings.bubble_shape || "rect";
     renderShape();
     $("denoise").checked = info.settings.mic_denoise !== false;
     $("blurStrength").value = Math.min(10, info.settings.blur_strength ?? 3);
     $("camSize").value = info.settings.bubble_scale ?? 100;
     $("camSizeVal").textContent = $("camSize").value;
-    renderBlurStrength();
     updateBadges();
     if (!info.token_ok) {
       $("err").textContent = "CAPTURE_TOKEN / SERVER_URL missing in .env — uploads will fail.";
@@ -350,7 +356,8 @@
       monitor: monIdx,
       camera: $("camera").value,
       mic: $("mic").value,
-      blur: $("blur").classList.contains("on"),
+      blur: bgOn,
+      bg_mode: bgMode,
       bubble_shape: shape,
       blur_strength: parseInt($("blurStrength").value, 10),
       bubble_scale: parseInt($("camSize").value, 10),
@@ -358,9 +365,17 @@
     }), 150);
   }
 
-  function renderBlurStrength() {
-    const on = $("blur").classList.contains("on");
-    $("blurStrengthRow").hidden = !on;
+  const BG_LABEL = { blur: "Blur", black: "Black", white: "White" };
+  function renderBg() {
+    const solid = bgMode !== "blur";
+    $("blur").classList.toggle("on", bgOn);
+    $("blurLabel").textContent = BG_LABEL[bgMode];
+    $("blurIcon").style.display = solid ? "none" : "";
+    $("solidIcon").style.display = solid ? "" : "none";
+    // filled for black, hollow for white
+    $("solidFill").style.display = bgMode === "black" ? "" : "none";
+    // strength only means anything for blur
+    $("blurStrengthRow").hidden = !(bgOn && bgMode === "blur");
     $("blurStrengthVal").textContent = $("blurStrength").value;
   }
   function updateBadges() {
@@ -376,8 +391,12 @@
     $(id).addEventListener("change", () => { updateBadges(); save(); });
 
   $("blur").addEventListener("click", () => {
-    $("blur").classList.toggle("on");
-    renderBlurStrength();
+    // off -> blur -> black -> white -> off
+    if (!bgOn) { bgOn = true; bgMode = "blur"; }
+    else if (bgMode === "blur") { bgMode = "black"; }
+    else if (bgMode === "black") { bgMode = "white"; }
+    else { bgOn = false; bgMode = "blur"; }
+    renderBg();
     save();
   });
   $("blurStrength").addEventListener("input", () => {

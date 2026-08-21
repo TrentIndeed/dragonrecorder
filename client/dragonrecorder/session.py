@@ -340,7 +340,10 @@ class Session:
     # ---- state for the toolbar's poll ----
 
     def toolbar_state(self) -> dict:
+        s = config.load_settings()
         return {
             "state": self.state.name,
             "elapsed": self.rec.elapsed() if self.rec else 0,
+            "bg_mode": config.bg_mode(s),
+            "bg_on": bool(s.get("blur")),
         }
