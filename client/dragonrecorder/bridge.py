@@ -81,6 +81,19 @@ def last_recording() -> dict:
                 "taken": _last["taken"]}
 
 
+def poke_existing() -> bool:
+    """True if another instance is already running — and if so, tell it to
+    show its panel, so a double launch feels like 'open the app'."""
+    import urllib.request
+    try:
+        req = urllib.request.Request(f"http://127.0.0.1:{PORT}/open",
+                                     method="POST")
+        with urllib.request.urlopen(req, timeout=2) as r:
+            return r.status == 200
+    except Exception:
+        return False
+
+
 def start(open_panel, close_panel=None, get_status=None,
           render_now=None) -> None:
     """Start the listener in a daemon thread. open_panel/close_panel/
