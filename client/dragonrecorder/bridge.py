@@ -114,15 +114,24 @@ def start(open_panel, close_panel=None, get_status=None,
         def _write(self, code: int, data: bytes) -> None:
             self.send_response(code)
             self.send_header("Access-Control-Allow-Origin", config.SERVER_URL)
+            self.send_header("Access-Control-Allow-Private-Network", "true")
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
             self.wfile.write(data)
 
         def do_OPTIONS(self):
+            # Chrome treats a page on the public internet reaching 127.0.0.1
+            # as a private-network request and preflights it; without this
+            # header it refuses the real request. (Newer Chrome also gates
+            # it behind a Local Network Access permission, which no header
+            # can satisfy - see handoff.js.)
             self.send_response(204)
             self.send_header("Access-Control-Allow-Origin", config.SERVER_URL)
             self.send_header("Access-Control-Allow-Methods", "GET, POST")
+            self.send_header("Access-Control-Allow-Private-Network", "true")
+            self.send_header("Access-Control-Max-Age", "600")
+            self.send_header("Content-Length", "0")
             self.end_headers()
 
         def do_GET(self):
